@@ -1,7 +1,7 @@
 #!/bin/sh
 # Restore a dump produced by scripts/db-backup.sh.
 #
-#   sh scripts/db-restore.sh backups/voice2brd-20260819T173500Z.sql
+#   sh scripts/db-restore.sh backups/vowcraft-20260819T173500Z.sql
 #
 # A full dump is applied to an empty database; an accounts-only dump is applied on top
 # of an existing one. Either way this writes to the live database, so it asks first.
@@ -33,7 +33,7 @@ read -r CONFIRM
 
 case "$FILE" in
   *-accounts-*)
-    # The seed recreates `demo@voice2brd.test` on every boot, with a *new* id. An
+    # The seed recreates `demo@vowcraft.test` on every boot, with a *new* id. An
     # accounts dump also contains that account, so ON CONFLICT skips the dumped User
     # row while its TeamMember and UserSettings rows still reference the dumped id —
     # which then fails a foreign key and aborts the restore.
@@ -41,15 +41,15 @@ case "$FILE" in
     # Removing the freshly seeded copy first lets the dump's version land intact,
     # children and all. It is the only account the seed owns, so this is the only row
     # that can collide this way.
-    docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
-      "DELETE FROM \"User\" WHERE email = 'demo@voice2brd.test';" > /dev/null 2>&1
+    docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
+      "DELETE FROM \"User\" WHERE email = 'demo@vowcraft.test';" > /dev/null 2>&1
     ;;
 esac
 
 # ON_ERROR_STOP so a partial restore fails loudly rather than leaving a half-populated
 # database that looks fine. Accounts dumps use ON CONFLICT DO NOTHING, so rows that
 # genuinely already exist are skipped rather than treated as errors.
-docker compose exec -T db psql -v ON_ERROR_STOP=1 -U voice2brd -d voice2brd < "$FILE" > /dev/null
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U vowcraft -d vowcraft < "$FILE" > /dev/null
 
 case "$FILE" in
   *-accounts-*)
@@ -63,5 +63,5 @@ case "$FILE" in
 esac
 
 echo "→ restored. Accounts now present:"
-docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
   'SELECT email FROM "User" ORDER BY "createdAt";' | sed 's/^/   /'

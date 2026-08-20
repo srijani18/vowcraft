@@ -25,8 +25,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from voice2brd_db.base import Base  # noqa: E402
-import voice2brd_db.models  # noqa: E402,F401 — registers every mapper on Base.metadata
+from vowcraft_db.base import Base  # noqa: E402
+import vowcraft_db.models  # noqa: E402,F401 — registers every mapper on Base.metadata
 
 config = context.config
 if config.config_file_name is not None:

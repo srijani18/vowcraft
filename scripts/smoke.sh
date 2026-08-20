@@ -59,10 +59,10 @@ has() { grep -q -- "$2" "$1" 2>/dev/null; }
 # use. FastAPI has no dev-identity bypass (a deliberate choice: see the comment on
 # `optional_user` in apps/api/app/api/dependencies.py), so reaching the seeded demo
 # account's fixture data through it means a real login, same as any other account.
-DEV_PASSWORD="${DEV_USER_PASSWORD:-voice2brd-dev-account-password}"
+DEV_PASSWORD="${DEV_USER_PASSWORD:-vowcraft-dev-account-password}"
 curl -fsS -X POST "$API_BASE/api/auth/login" \
   -H 'content-type: application/json' \
-  -d "{\"email\":\"${DEV_USER_EMAIL:-demo@voice2brd.test}\",\"password\":\"$DEV_PASSWORD\"}" \
+  -d "{\"email\":\"${DEV_USER_EMAIL:-demo@vowcraft.test}\",\"password\":\"$DEV_PASSWORD\"}" \
   -o "$TMP/ai-login.json" 2>/dev/null
 AI_TOKEN=$(py "$TMP/ai-login.json" "d['tokens']['accessToken']")
 AUTH_HEADER="authorization: Bearer $AI_TOKEN"
@@ -97,8 +97,8 @@ preflight
 # wipe unnecessary in the first place; this is the net for when someone reaches for the
 # flag anyway.
 if command -v docker > /dev/null 2>&1; then
-  REAL_ACCOUNTS=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
-    "SELECT count(*) FROM \"User\" WHERE email NOT LIKE '%@acme.test' AND email <> 'demo@voice2brd.test';" \
+  REAL_ACCOUNTS=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
+    "SELECT count(*) FROM \"User\" WHERE email NOT LIKE '%@acme.test' AND email <> 'demo@vowcraft.test';" \
     2>/dev/null | tr -d ' \r')
   if [ "${REAL_ACCOUNTS:-0}" -gt 0 ]; then
     sh scripts/db-backup.sh accounts > /dev/null 2>&1 &&
@@ -282,19 +282,19 @@ if [ -n "$READY_ID" ]; then
   check "different payload on an executed item returns 409 (got $CODE)" $?
 
   head_ "audit trail (SPEC-003 §10.4)"
-  ATTEMPTS=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  ATTEMPTS=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "SELECT count(*) FROM \"ExecutionAttempt\" WHERE \"actionItemId\"='$READY_ID' AND outcome='SUCCESS';" 2>/dev/null | tr -d ' \r')
   [ "${ATTEMPTS:-0}" = "1" ]
   check "exactly one SUCCESS attempt recorded despite two requests (got ${ATTEMPTS:-?})" $?
-  EXECUTED_LOGS=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  EXECUTED_LOGS=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "SELECT count(*) FROM \"AuditLog\" WHERE \"actionItemId\"='$READY_ID' AND event='action_item.executed';" 2>/dev/null | tr -d ' \r')
   [ "${EXECUTED_LOGS:-0}" = "1" ]
   check "exactly one action_item.executed audit row (got ${EXECUTED_LOGS:-?})" $?
-  BLOCKED_LOGS=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  BLOCKED_LOGS=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "SELECT count(*) FROM \"AuditLog\" WHERE event='action_item.guardrail_blocked';" 2>/dev/null | tr -d ' \r')
   [ "${BLOCKED_LOGS:-0}" -ge 1 ]
   check "blocked attempt still wrote an audit row (SPEC-003 §10.3)" $?
-  CORRECTIONS=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  CORRECTIONS=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "SELECT count(*) FROM \"Correction\";" 2>/dev/null | tr -d ' \r')
   dim "        corrections captured so far: ${CORRECTIONS:-0}"
 else
@@ -357,7 +357,7 @@ check "user key takes precedence over environment (SPEC-004 §10.4)" $?
 
 head_ "ciphertext is bound to its owner (SPEC-004 §10.3)"
 if command -v docker > /dev/null 2>&1; then
-  psql() { docker compose exec -T db psql -U voice2brd -d voice2brd -tAc "$1" 2>/dev/null | tr -d ' \r'; }
+  psql() { docker compose exec -T db psql -U vowcraft -d vowcraft -tAc "$1" 2>/dev/null | tr -d ' \r'; }
   CT=$(psql 'SELECT "secretsEnc" FROM "Credential" WHERE service='"'"'groq'"'"';')
   case "$CT" in v1.*) BOUND=0 ;; *) BOUND=1 ;; esac
   [ "$BOUND" = "0" ]
@@ -467,17 +467,17 @@ check "two throwaway accounts were created for the password tests" $?
 
 # Clear ONE account's password, scoped by email to the row this block created.
 if command -v docker > /dev/null 2>&1; then
-  docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "UPDATE \"User\" SET \"passwordHash\" = NULL, \"passwordUpdatedAt\" = NULL WHERE email = '$PW_EMAIL';" > /dev/null 2>&1
 
-  CLEARED=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  CLEARED=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "SELECT COALESCE(\"passwordHash\", 'CLEARED') FROM \"User\" WHERE email = '$PW_EMAIL';" 2>/dev/null | tr -d ' \r')
   [ "$CLEARED" = "CLEARED" ]
   check "the named throwaway had its password cleared" $?
 
   # The control: the sibling created moments earlier must be untouched. This is the
   # regression guard for the unscoped UPDATE that wiped every account in the database.
-  SIBLING=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  SIBLING=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "SELECT COALESCE(left(\"passwordHash\", 3), 'CLEARED') FROM \"User\" WHERE email = '$PW2_EMAIL';" 2>/dev/null | tr -d ' \r')
   [ "$SIBLING" = "s1." ]
   check "the sibling account kept its password (got '$SIBLING')" $?
@@ -532,7 +532,7 @@ if command -v docker > /dev/null 2>&1; then
   docker compose logs web 2>/dev/null | grep -q 'first throwaway phrase' && PWLEAK=0 || PWLEAK=1
   [ "$PWLEAK" = "1" ]
   check "no password value reaches the logs" $?
-  STORED=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  STORED=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "SELECT \"passwordHash\" FROM \"User\" WHERE email = '$PW2_EMAIL';" 2>/dev/null | tr -d ' \r')
   case "$STORED" in s1.*) SCRYPT=0 ;; *) SCRYPT=1 ;; esac
   [ "$SCRYPT" = "0" ]
@@ -543,8 +543,8 @@ head_ "the suite leaves pre-existing accounts alone"
 # The regression guard for the bug above: the seeded account must still be able to sign
 # in with the password it was seeded with, after everything this suite has done.
 if command -v docker > /dev/null 2>&1; then
-  DEMO_HASH=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
-    "SELECT COALESCE(left(\"passwordHash\", 3), 'NONE') FROM \"User\" WHERE email = '${DEV_EMAIL:-demo@voice2brd.test}';" 2>/dev/null | tr -d ' \r')
+  DEMO_HASH=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
+    "SELECT COALESCE(left(\"passwordHash\", 3), 'NONE') FROM \"User\" WHERE email = '${DEV_EMAIL:-demo@vowcraft.test}';" 2>/dev/null | tr -d ' \r')
   # Either it never had one (seeded accounts do not) or it still has a valid hash —
   # what must NOT happen is a hash being destroyed by this script.
   case "$DEMO_HASH" in s1.|NONE) SAFE=0 ;; *) SAFE=1 ;; esac
@@ -910,7 +910,7 @@ else
 
   # 9. tokens are at rest as hashes
   if command -v docker > /dev/null 2>&1; then
-    STORED=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+    STORED=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
       'SELECT "tokenHash" FROM "PasswordResetToken" ORDER BY "createdAt" DESC LIMIT 1;' 2>/dev/null | tr -d ' \r')
     printf '%s' "$STORED" | grep -qE '^[0-9a-f]{64}$'
     check "the token is stored as a SHA-256 hash" $?
@@ -1083,7 +1083,7 @@ check "an approved item survives re-extraction (SPEC-010 §10.9)" $?
 # everything downstream of that classification, against the running app and a real row:
 # what reaches the screen, what survives, and that retry works. The failure state is
 # written directly to the row, which is exactly what `extractInto` writes.
-Q() { docker compose exec -T db psql -U voice2brd -d voice2brd -tAc "$1" < /dev/null 2>/dev/null | tr -d ' \r'; }
+Q() { docker compose exec -T db psql -U vowcraft -d vowcraft -tAc "$1" < /dev/null 2>/dev/null | tr -d ' \r'; }
 
 SEGMENTS_BEFORE=$(Q "SELECT count(*) FROM \"Segment\" WHERE \"transcriptId\"='$TRANSCRIPT_ID';")
 ITEMS_BEFORE=$(Q "SELECT count(*) FROM \"ActionItem\" WHERE \"transcriptId\"='$TRANSCRIPT_ID';")
@@ -1590,28 +1590,28 @@ head_ "cleaning up after itself"
 if command -v docker > /dev/null 2>&1; then
   FIXTURE_PATTERN="^(renametest|pwtest|pwtest2|smoke|cookiecheck|resettest|welcome)-[0-9]+@acme\\.test$"
 
-  BEFORE=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  BEFORE=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "SELECT count(*) FROM \"User\" WHERE email ~ '$FIXTURE_PATTERN';" 2>/dev/null | tr -d ' \r')
 
   # Everything owned by a fixture account cascades from the User row.
-  docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "DELETE FROM \"User\" WHERE email ~ '$FIXTURE_PATTERN';" > /dev/null 2>&1
 
-  AFTER=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  AFTER=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "SELECT count(*) FROM \"User\" WHERE email ~ '$FIXTURE_PATTERN';" 2>/dev/null | tr -d ' \r')
 
   [ "${AFTER:-1}" = "0" ]
   check "removed ${BEFORE:-?} fixture account(s), leaving none behind" $?
 
   # And the accounts it must never have touched are still there.
-  REMAINING=$(docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  REMAINING=$(docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "SELECT count(*) FROM \"User\" WHERE email !~ '$FIXTURE_PATTERN';" 2>/dev/null | tr -d ' \r')
   [ "${REMAINING:-0}" -ge 1 ]
   check "${REMAINING:-?} real account(s) untouched" $?
 
   # Transcripts uploaded by the ingest section are removed by that section itself; this
   # catches any left by an early failure so a re-run starts clean.
-  docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+  docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
     "DELETE FROM \"Transcript\" WHERE title IN ('Smoke meeting', 'Screen recording', 'No audio');" > /dev/null 2>&1
 fi
 

@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-Voice2BRD turns spoken conversations into *executed* outcomes. The pipeline is:
+Vowcraft turns spoken conversations into *executed* outcomes. The pipeline is:
 
 ```
 capture → transcribe → diarize → extract → classify risk → approve (human) → execute → audit

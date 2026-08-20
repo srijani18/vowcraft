@@ -22,8 +22,8 @@ running() {
 ACCOUNTS=0
 if running db; then
   ACCOUNTS=$(
-    docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
-      "SELECT count(*) FROM \"User\" WHERE email <> 'demo@voice2brd.test';" \
+    docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
+      "SELECT count(*) FROM \"User\" WHERE email <> 'demo@vowcraft.test';" \
       < /dev/null 2>/dev/null | tr -d ' \r'
   )
 fi
@@ -53,7 +53,7 @@ until curl -fsS http://localhost:3000/api/health 2>/dev/null | grep -q '"databas
 done
 echo ' ready'
 
-LATEST=$(ls -1t backups/voice2brd-accounts-*.sql 2>/dev/null | head -1)
+LATEST=$(ls -1t backups/vowcraft-accounts-*.sql 2>/dev/null | head -1)
 if [ -n "$LATEST" ] && [ "${ACCOUNTS:-0}" -gt 0 ]; then
   echo
   echo "Accounts were backed up. To bring them back:"

@@ -1,5 +1,5 @@
 {
-  "name": "voice2brd",
+  "name": "vowcraft",
   "version": "0.3.0",
   "private": true,
   "description": "Voice-to-action AI agent — transcription, action-item extraction, human-approved execution.",

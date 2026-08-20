@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from voice2brd_db import ActionItem, AuditLog, Transcript, User
+from vowcraft_db import ActionItem, AuditLog, Transcript, User
 
 _MAX_PAGE = 200
 

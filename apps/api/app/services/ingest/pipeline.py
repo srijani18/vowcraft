@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from voice2brd_db import Segment, Speaker, Transcript, TranscriptAsset, Word
+from vowcraft_db import Segment, Speaker, Transcript, TranscriptAsset, Word
 
 from app.core.config import get_settings
 from app.core.logging import logger

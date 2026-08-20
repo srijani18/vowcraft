@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, File, Form, Response, UploadFile, status
 from sqlalchemy import select
-from voice2brd_db import Transcript, TranscriptAsset, now_ms
+from vowcraft_db import Transcript, TranscriptAsset, now_ms
 
 from app.api.dependencies import CurrentUser, RequestIdDep, SessionDep, SettingsDep
 from app.core.exceptions import not_found

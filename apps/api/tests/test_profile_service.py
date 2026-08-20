@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import select
-from voice2brd_db import AuditLog
+from vowcraft_db import AuditLog
 
 from app.core.exceptions import AppError
 from app.services.settings_profile import ProfileService

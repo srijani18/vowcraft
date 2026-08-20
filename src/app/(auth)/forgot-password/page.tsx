@@ -6,7 +6,7 @@ import { env } from '@/lib/env'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'Reset your password — Voice2BRD',
+  title: 'Reset your password — Vowcraft',
   robots: { index: false, follow: false },
 }
 

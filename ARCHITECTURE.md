@@ -1,4 +1,4 @@
-# Voice2BRD — Architecture
+# Vowcraft — Architecture
 
 > Spoken conversation → transcript → extracted intent → **human approval** → real
 > side effect in Google Calendar / Notion / Gmail / Slack → immutable audit trail.
@@ -46,7 +46,7 @@ graph TB
         U["👤 Reviewer<br/><i>approves / edits / rejects</i>"]
     end
 
-    subgraph v2b["Voice2BRD"]
+    subgraph v2b["Vowcraft"]
         WEB["<b>web</b> — Next.js 15<br/>Dashboard + API routes<br/><i>stateless</i>"]
         ASR["<b>asr</b> — Python FastAPI<br/>WhisperX + pyannote<br/><i>heavy, GPU-friendly</i>"]
         DB[("<b>PostgreSQL 16</b><br/>system of record")]
@@ -674,7 +674,7 @@ equivalent below:
 | Where does the audit log query live? | [`apps/api/app/services/audit.py`](./apps/api/app/services/audit.py)'s `AuditService` — keyset (seek) pagination on `(at, id)`, not `OFFSET`, to match the frontend's cursor-based "load more" and stay stable under concurrent inserts |
 | Where does the BYOK credential vault live? | [`apps/api/app/services/credentials.py`](./apps/api/app/services/credentials.py) — the full 31-service catalogue (`CATALOG`), resolution order, and `verify`'s per-service recipe mechanism (bearer/header/query auth); `src/lib/credentials/catalog.ts` is still the source of truth for the *frontend's* presentation layer, so a new provider needs an entry in both |
 | Where is the streaming-ASR relay? | [`apps/api/app/api/routes/speech.py`](./apps/api/app/api/routes/speech.py) — the WebSocket the browser actually connects to |
-| Where are the DB models? | [`packages/db/voice2brd_db/models/`](./packages/db/voice2brd_db/models/) — mirrors the live Prisma schema exactly, see SPEC-015 §3 |
+| Where are the DB models? | [`packages/db/vowcraft_db/models/`](./packages/db/vowcraft_db/models/) — mirrors the live Prisma schema exactly, see SPEC-015 §3 |
 | How does a Server Component call FastAPI? | [`src/lib/api-server.ts`](./src/lib/api-server.ts) + [`src/lib/api-token.ts`](./src/lib/api-token.ts) — mints its own bearer token server-side; SPEC-015 §4.1 |
 | How does the browser call FastAPI? | [`src/lib/api-client.ts`](./src/lib/api-client.ts) — the `sessionStorage` token pair, not a cookie |
 | Which surfaces are cut over vs. still dual-running? | SPEC-015 §7 |

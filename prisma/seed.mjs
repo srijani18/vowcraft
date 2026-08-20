@@ -26,7 +26,7 @@ const DAY = 24 * HOUR
  * smoke suite (or anyone) to reach this account's fixture data through that backend.
  */
 const scrypt = promisify(scryptCb)
-const DEV_PASSWORD = 'voice2brd-dev-account-password'
+const DEV_PASSWORD = 'vowcraft-dev-account-password'
 
 async function hashDevPassword() {
   const salt = randomBytes(16)
@@ -69,7 +69,7 @@ function nextSaturday() {
 }
 
 async function main() {
-  const email = process.env.DEV_USER_EMAIL ?? 'demo@voice2brd.test'
+  const email = process.env.DEV_USER_EMAIL ?? 'demo@vowcraft.test'
 
   // Idempotent: re-running the seed replaces the demo data rather than duplicating.
   const existing = await db.user.findUnique({ where: { email } })

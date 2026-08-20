@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
-from voice2brd_db import AuditLog
+from vowcraft_db import AuditLog
 
 from app.api.routes.settings import SettingsPatch
 from app.core.exceptions import AppError

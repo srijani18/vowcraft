@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
-from voice2brd_db import AuditLog, Correction
+from vowcraft_db import AuditLog, Correction
 
 from app.services.action_items import ActionItemService
 

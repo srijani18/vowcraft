@@ -35,7 +35,7 @@ export interface SendResult {
   error?: string
 }
 
-const SENDER_FALLBACK = 'no-reply@voice2brd.local'
+const SENDER_FALLBACK = 'no-reply@vowcraft.local'
 
 async function sendgridKey(userId: string | null): Promise<string | null> {
   // A per-user key makes no sense for a transactional send to someone who may not be
@@ -129,11 +129,11 @@ export function resetEmail(link: string, name: string | null): Message {
   const greeting = name ? `Hi ${name.split(' ')[0]},` : 'Hi,'
   return {
     to: '',
-    subject: 'Reset your Voice2BRD password',
+    subject: 'Reset your Vowcraft password',
     previewUrl: link,
     body:
       `${greeting}\n\n` +
-      `Someone asked to reset the password on your Voice2BRD account. If that was you, ` +
+      `Someone asked to reset the password on your Vowcraft account. If that was you, ` +
       `open the link below within the next hour:\n\n` +
       `${link}\n\n` +
       `The link works once. Using it will also sign you out everywhere else, which is ` +
@@ -153,10 +153,10 @@ export function welcomeEmail(name: string | null, appUrl: string, method: 'passw
 
   return {
     to: '',
-    subject: 'Welcome to Voice2BRD',
+    subject: 'Welcome to Vowcraft',
     body:
       `${greeting}\n\n` +
-      `Voice2BRD turns what a meeting agreed to into calendar invites, tasks and drafts — but ` +
+      `Vowcraft turns what a meeting agreed to into calendar invites, tasks and drafts — but ` +
       `nothing is sent until you approve it. Three things worth knowing before you start:\n\n` +
       `1. You are in mock mode. Every action runs end to end and produces a labelled simulated ` +
       `result, so you can walk the whole approval path before connecting a single account.\n\n` +

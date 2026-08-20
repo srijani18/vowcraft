@@ -13,7 +13,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from voice2brd_db import BrdDocument, BrdRevision
+from vowcraft_db import BrdDocument, BrdRevision
 
 from app.core.config import Settings
 from app.core.exceptions import AppError, bad_request, not_found, unprocessable

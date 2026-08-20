@@ -18,7 +18,7 @@ from typing import Any, Optional
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from voice2brd_db import (
+from vowcraft_db import (
     ActionItem,
     CalendarBusyBlock,
     Correction,

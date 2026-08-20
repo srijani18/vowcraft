@@ -193,7 +193,7 @@ describe('both themes define the same token set', () => {
 
 describe('the marketing site shares these definitions', () => {
   test('its token values are identical, not merely similar', () => {
-    const other = '/Users/srijaniguharay/Desktop/Development/voice2brd-marketing/src/app/globals.css'
+    const other = '/Users/srijaniguharay/Desktop/Development/vowcraft-marketing/src/app/globals.css'
     let marketingCss: string
     try {
       marketingCss = readFileSync(other, 'utf8')

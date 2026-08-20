@@ -1,4 +1,4 @@
-// Voice2BRD — system of record.
+// Vowcraft — system of record.
 // Traceability: SPEC-000 §5 (extraction contract), SPEC-001 §5/§10 (status, DTO),
 // SPEC-002 §7 (executionResult), SPEC-003 §7/§8 (audit, corrections),
 // SPEC-004 (credential vault).

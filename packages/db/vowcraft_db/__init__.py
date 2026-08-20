@@ -1,4 +1,4 @@
-"""Voice2BRD database package.
+"""Vowcraft database package.
 
 Owns the schema, the SQLAlchemy models and the Alembic migrations. Deployed on Render as
 a *release job* rather than a service — a database is not a process you run, it is a

@@ -6,7 +6,7 @@ import { googleConfigured } from '@/server/auth/google'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'Create an account — Voice2BRD',
+  title: 'Create an account — Vowcraft',
   robots: { index: false, follow: false },
 }
 

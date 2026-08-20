@@ -36,7 +36,7 @@ from typing import Any, Literal, Optional
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from voice2brd_db import Credential, now_ms
+from vowcraft_db import Credential, now_ms
 
 from app.core.config import Settings
 from app.core.crypto import DecryptionFailed, decrypt_json, encrypt_json

@@ -23,7 +23,7 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
           <span className="glow-accent grid size-8 place-items-center rounded-xl bg-accent-fill text-accent-on">
             <i className="bi bi-soundwave text-base" aria-hidden />
           </span>
-          <span className="text-[15px] font-semibold tracking-tight">Voice2BRD</span>
+          <span className="text-[15px] font-semibold tracking-tight">Vowcraft</span>
         </Link>
         <div className="ml-auto">
           <ThemeToggle compact />

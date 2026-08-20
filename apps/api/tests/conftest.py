@@ -29,7 +29,7 @@ os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("INTEGRATIONS_MODE", "mock")
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
-from voice2brd_db import ActionItem, Base, Segment, Speaker, Transcript, TranscriptAsset, User  # noqa: E402
+from vowcraft_db import ActionItem, Base, Segment, Speaker, Transcript, TranscriptAsset, User  # noqa: E402
 
 from app.core.config import Settings  # noqa: E402
 from app.domain.types import (  # noqa: E402
@@ -43,11 +43,11 @@ from app.domain.types import (  # noqa: E402
 
 # A database dedicated to this suite, never the one `docker-compose.yml`'s `web`/`api`
 # serve real accounts from — created once with:
-#   psql -U voice2brd -d postgres -c "CREATE DATABASE voice2brd_test OWNER voice2brd;"
-#   DATABASE_URL=postgresql://voice2brd:voice2brd@localhost:5432/voice2brd_test \
+#   psql -U vowcraft -d postgres -c "CREATE DATABASE vowcraft_test OWNER vowcraft;"
+#   DATABASE_URL=postgresql://vowcraft:vowcraft@localhost:5432/vowcraft_test \
 #     python -m alembic -c packages/db/alembic.ini upgrade head
 TEST_DATABASE_URL = os.environ.setdefault(
-    "TEST_DATABASE_URL", "postgresql+asyncpg://voice2brd:voice2brd@localhost:5432/voice2brd_test"
+    "TEST_DATABASE_URL", "postgresql+asyncpg://vowcraft:vowcraft@localhost:5432/vowcraft_test"
 )
 
 #: Thursday, 09:00 UTC. Chosen so a weekday/weekend rule has an unambiguous answer and the
@@ -148,7 +148,7 @@ def make_ctx(settings, team, busy, decisions):
 # calls `session.commit()` internally (the routes do, to close the audit-row boundary),
 # and `join_transaction_mode="create_savepoint"` turns each of those into a savepoint
 # release rather than a real commit, so the outer rollback still undoes it all. Nothing
-# here ever touches the `voice2brd` database real accounts live in.
+# here ever touches the `vowcraft` database real accounts live in.
 
 
 @pytest.fixture

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
-from voice2brd_db import AuditLog
+from vowcraft_db import AuditLog
 
 from app.core.config import Settings
 from app.core.exceptions import AppError

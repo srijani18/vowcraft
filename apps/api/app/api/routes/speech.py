@@ -28,7 +28,7 @@ from typing import Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
-from voice2brd_db import User
+from vowcraft_db import User
 
 from app.api.dependencies import CurrentUser, SessionDep, SettingsDep
 from app.core.config import get_settings

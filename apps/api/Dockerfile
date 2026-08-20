@@ -1,4 +1,4 @@
-# Voice2BRD API — FastAPI backend.
+# Vowcraft API — FastAPI backend.
 #
 # Deployed on Render as its own service, separate from the Postgres instance and the
 # Next.js frontend on Vercel. Local development runs the same image via docker-compose,

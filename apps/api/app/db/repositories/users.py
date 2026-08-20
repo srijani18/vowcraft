@@ -11,7 +11,7 @@ from typing import Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from voice2brd_db import AuditLog, User, UserSettings, now_ms
+from vowcraft_db import AuditLog, User, UserSettings, now_ms
 
 
 class UserRepository:
@@ -65,7 +65,7 @@ class UserRepository:
         everywhere", with no session table to keep."""
         user.password_hash = password_hash
         # Truncated to milliseconds: the column cannot hold more, and the `pwd`
-        # claim is compared exactly (see voice2brd_db.clock).
+        # claim is compared exactly (see vowcraft_db.clock).
         user.password_updated_at = now_ms()
         await self.session.flush()
 

@@ -44,7 +44,7 @@ const STEPS: readonly Step[] = [
     icon: 'bi-soundwave',
     title: 'Conversations become actions',
     body:
-      'Voice2BRD transcribes a meeting, extracts what was committed to, and then executes it — ' +
+      'Vowcraft transcribes a meeting, extracts what was committed to, and then executes it — ' +
       'but only after you approve. Nothing reaches Calendar, Notion, Gmail, or Slack on its own.',
     points: [
       'Every action carries an owner, a deadline, and a priority',

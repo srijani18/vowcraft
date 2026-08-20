@@ -51,7 +51,7 @@ const schema = z.object({
     .transform((v) => v === 'true'),
 
   // Dev-only identity seam until NextAuth lands (SPEC-000 §7).
-  DEV_USER_EMAIL: z.string().email().default('demo@voice2brd.test'),
+  DEV_USER_EMAIL: z.string().email().default('demo@vowcraft.test'),
 
   // OAuth apps — optional; absence means the provider shows as unconfigured.
   GOOGLE_CLIENT_ID: z.string().optional(),

@@ -14,7 +14,7 @@ from typing import Annotated, Optional
 from fastapi import Depends, Header, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from voice2brd_db import User
+from vowcraft_db import User
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import unauthorized

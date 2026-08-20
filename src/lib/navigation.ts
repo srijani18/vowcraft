@@ -41,7 +41,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     icon: 'bi-grid-1x2',
     modules: [
       {
-        slug: 'voice2brd',
+        slug: 'vowcraft',
         label: 'Voice to BRD',
         href: '/dashboard',
         icon: 'bi-mic-fill',

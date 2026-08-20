@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from voice2brd_db import AuditLog
+from vowcraft_db import AuditLog
 
 from app.services.audit import AuditService
 

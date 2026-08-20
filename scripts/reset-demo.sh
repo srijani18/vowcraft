@@ -23,6 +23,6 @@ echo "→ re-seeding the demo fixtures (user accounts are untouched)"
 docker compose exec -T web node prisma/seed.mjs < /dev/null
 
 echo "→ accounts still present:"
-docker compose exec -T db psql -U voice2brd -d voice2brd -tAc \
+docker compose exec -T db psql -U vowcraft -d vowcraft -tAc \
   'SELECT email FROM "User" ORDER BY "createdAt";' \
   < /dev/null | sed 's/^/   /'

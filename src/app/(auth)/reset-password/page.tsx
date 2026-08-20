@@ -7,7 +7,7 @@ import { sessionsAvailable } from '@/lib/session'
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
-  title: 'Set a new password — Voice2BRD',
+  title: 'Set a new password — Vowcraft',
   // A page reachable only with a single-use credential in its URL must never be
   // indexed, and the global Referrer-Policy keeps the token out of referrers.
   robots: { index: false, follow: false, nocache: true },

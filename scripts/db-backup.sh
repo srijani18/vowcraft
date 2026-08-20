@@ -1,7 +1,7 @@
 #!/bin/sh
 # Dump the database to ./backups/, so an accidental volume wipe is recoverable.
 #
-#   sh scripts/db-backup.sh            → backups/voice2brd-<timestamp>.sql
+#   sh scripts/db-backup.sh            → backups/vowcraft-<timestamp>.sql
 #   sh scripts/db-backup.sh accounts   → only the tables an account lives in
 #
 # The volume survives `docker compose down`, restarts and rebuilds — it is destroyed only
@@ -22,21 +22,21 @@ if ! docker compose ps --status running --services 2>/dev/null | grep -q '^db$';
 fi
 
 if [ "$MODE" = "accounts" ]; then
-  FILE="$OUT_DIR/voice2brd-accounts-$STAMP.sql"
+  FILE="$OUT_DIR/vowcraft-accounts-$STAMP.sql"
   # Identity and settings only — the tables you would actually miss. Transcripts and
   # action items are reproducible by re-uploading; an account is not.
   #
   # `--inserts --on-conflict-do-nothing` rather than the default COPY: an accounts dump is
   # applied *on top of* a live database, where the seed has already recreated
-  # `demo@voice2brd.test`. A COPY stream aborts on the first unique-key collision and
+  # `demo@vowcraft.test`. A COPY stream aborts on the first unique-key collision and
   # restores nothing; per-row inserts that skip conflicts restore everything else.
-  docker compose exec -T db pg_dump -U voice2brd -d voice2brd --data-only \
+  docker compose exec -T db pg_dump -U vowcraft -d vowcraft --data-only \
     --inserts --on-conflict-do-nothing \
     -t '"User"' -t '"UserSettings"' -t '"TeamMember"' -t '"AuthIdentity"' -t '"Credential"' \
     < /dev/null > "$FILE"
 else
-  FILE="$OUT_DIR/voice2brd-$STAMP.sql"
-  docker compose exec -T db pg_dump -U voice2brd -d voice2brd < /dev/null > "$FILE"
+  FILE="$OUT_DIR/vowcraft-$STAMP.sql"
+  docker compose exec -T db pg_dump -U vowcraft -d vowcraft < /dev/null > "$FILE"
 fi
 
 echo "→ wrote $FILE ($(wc -c < "$FILE" | tr -d ' ') bytes)"
@@ -45,7 +45,7 @@ echo "→ wrote $FILE ($(wc -c < "$FILE" | tr -d ' ') bytes)"
 # subset of an account's history for recovery purposes — nothing is lost by pruning them,
 # and 34 of these once accumulated silently before anyone noticed (they are gitignored,
 # so nothing ever surfaced the pileup).
-PRUNE_GLOB="$OUT_DIR/voice2brd-$([ "$MODE" = "accounts" ] && echo "accounts-")*.sql"
+PRUNE_GLOB="$OUT_DIR/vowcraft-$([ "$MODE" = "accounts" ] && echo "accounts-")*.sql"
 # shellcheck disable=SC2086
 ls -1t $PRUNE_GLOB 2>/dev/null | tail -n +6 | xargs -r rm -f
 echo "  restore with: sh scripts/db-restore.sh $FILE"

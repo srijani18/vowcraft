@@ -4,7 +4,7 @@ import { ToastProvider } from '@/components/ui/Toast'
 import { THEME_INIT_SCRIPT } from '@/components/ui/ThemeToggle'
 
 export const metadata: Metadata = {
-  title: 'Voice2BRD — voice to action',
+  title: 'Vowcraft — voice to action',
   description:
     'Turn conversations into approved, executed outcomes: transcription, action-item extraction, human-in-the-loop execution.',
 }

@@ -1,7 +1,7 @@
 [project]
-name = "voice2brd-api"
+name = "vowcraft-api"
 version = "1.0.0"
-description = "Voice2BRD backend: voice to business requirements, action extraction, guarded execution."
+description = "Vowcraft backend: voice to business requirements, action extraction, guarded execution."
 requires-python = ">=3.9"
 
 [tool.pytest.ini_options]

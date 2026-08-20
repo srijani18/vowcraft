@@ -25,7 +25,7 @@ Three things make this a migration rather than a rewrite:
 ## 2. Repository layout
 
 ```
-voice2brd/
+vowcraft/
 ├── src/                  Next.js frontend (route handlers here are being retired per-surface)
 ├── apps/api/             FastAPI backend
 │   ├── app/
@@ -127,7 +127,7 @@ signed out" work with no server-side session table. Millisecond precision matter
 columns are `timestamp(3)` and Postgres *rounds* rather than truncates on write — a value
 computed in Python's native microsecond precision would disagree with what the database
 actually stored about half the time, producing an intermittent, unreproducible logout
-immediately after sign-in. `voice2brd_db.clock.now_ms()` exists for exactly this reason.
+immediately after sign-in. `vowcraft_db.clock.now_ms()` exists for exactly this reason.
 
 The browser holds the token in `sessionStorage`, attaches it as `Authorization: Bearer …` via
 `src/lib/api-client.ts`, and refreshes transparently on a 401.
@@ -176,7 +176,7 @@ Before any frontend surface is repointed from Next.js to FastAPI, that surface h
    what the frontend sends, and a `computeReadiness` port that silently dropped the
    low-confidence and no-owner checks — none of which a unit test against a mock session would
    have caught, because nothing was exercising the actual wire contract or the actual schema.
-   `apps/api/tests/test_action_items_service.py` runs against a dedicated `voice2brd_test`
+   `apps/api/tests/test_action_items_service.py` runs against a dedicated `vowcraft_test`
    database (never the one real accounts live in — see `db_session` in `conftest.py`), created
    once via `alembic upgrade head` and given a fresh rolled-back transaction per test.
 

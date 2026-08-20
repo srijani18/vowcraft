@@ -14,7 +14,7 @@ divergence at that exact spot.
 from __future__ import annotations
 
 import pytest
-from voice2brd_db import AuditLog
+from vowcraft_db import AuditLog
 from sqlalchemy import select
 
 from app.core.config import Settings

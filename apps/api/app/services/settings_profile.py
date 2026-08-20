@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo, available_timezones
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from voice2brd_db import User, UserSettings, now_ms
+from vowcraft_db import User, UserSettings, now_ms
 
 from app.core.exceptions import conflict, not_found, unprocessable
 from app.db.repositories.users import AuditRepository, UserRepository

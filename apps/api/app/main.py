@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
-        title="Voice2BRD API",
+        title="Vowcraft API",
         version="1.0.0",
         description="Voice to business-requirements, action extraction, and guarded execution.",
         lifespan=lifespan,

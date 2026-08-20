@@ -66,7 +66,7 @@ describe('module registry — SPEC-005 §2', () => {
   test('the shipped surfaces are all present and marked live', () => {
     const live = new Set(ALL_MODULES.filter((m) => m.status === 'live').map((m) => m.slug))
     for (const expected of [
-      'voice2brd',
+      'vowcraft',
       'brd-history',
       'dashboard',
       'upload',
@@ -102,7 +102,7 @@ describe('module registry — SPEC-005 §2', () => {
   })
 
   test('the voice surface is the landing route — it is the tool\'s primary act (SPEC-014 §2)', () => {
-    assert.equal(findModule('voice2brd')?.module.href, '/dashboard')
+    assert.equal(findModule('vowcraft')?.module.href, '/dashboard')
     // The analytics overview it displaced still has a home of its own.
     assert.equal(findModule('dashboard')?.module.href, '/dashboard/overview')
   })

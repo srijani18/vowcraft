@@ -15,7 +15,7 @@ import clsx from 'clsx'
 
 type Choice = 'system' | 'light' | 'dark'
 
-const STORAGE_KEY = 'voice2brd-theme'
+const STORAGE_KEY = 'vowcraft-theme'
 
 const NEXT: Record<Choice, Choice> = { system: 'light', light: 'dark', dark: 'system' }
 

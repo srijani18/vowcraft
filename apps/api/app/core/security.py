@@ -27,7 +27,7 @@ from datetime import datetime
 from typing import Literal, Optional
 
 import jwt
-from voice2brd_db import to_epoch_ms
+from vowcraft_db import to_epoch_ms
 
 TokenType = Literal["access", "refresh"]
 
@@ -58,7 +58,7 @@ def password_epoch_ms(password_updated_at: Optional[datetime]) -> int:
     same *second* as a password rotation must not survive it.
     """
     # Delegated so there is one definition of "naive means UTC" and one of the
-    # millisecond truncation the column requires (see voice2brd_db.clock).
+    # millisecond truncation the column requires (see vowcraft_db.clock).
     return to_epoch_ms(password_updated_at)
 
 

@@ -157,7 +157,7 @@ export const sendgrid: IntegrationProvider<SendGridPayload, SendGridResult> = {
         content: [{ type: 'text/plain', value: payload.body }],
         // Surfaces in SendGrid's activity feed, which is how a support engineer
         // ties a delivered message back to the action item that produced it.
-        custom_args: { voice2brd_idempotency_key: ctx.idempotencyKey },
+        custom_args: { vowcraft_idempotency_key: ctx.idempotencyKey },
       }),
     })
 

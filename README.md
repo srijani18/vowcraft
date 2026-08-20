@@ -1,4 +1,4 @@
-# Voice2BRD
+# Vowcraft
 
 **Spoken conversation → transcript → extracted action items → human approval → real
 side effect in Google Calendar / Notion / Gmail / Slack → immutable audit trail.**
@@ -11,7 +11,7 @@ approve — on the record.
 - **Architecture, with diagrams:** [ARCHITECTURE.md](./ARCHITECTURE.md)
 - **Specifications:** [specs/](./specs) — the code traces to these, section by section
 - **Feature → spec → status:** [specs/ROADMAP.md](./specs/ROADMAP.md)
-- **Marketing site:** [`../voice2brd-marketing`](../voice2brd-marketing) — separate
+- **Marketing site:** [`../vowcraft-marketing`](../vowcraft-marketing) — separate
   repo and deploy, sharing this palette's token definitions verbatim
 
 ---
@@ -21,7 +21,7 @@ approve — on the record.
 Requires only Docker. **No API keys.**
 
 ```bash
-git clone <this repo> && cd voice2brd
+git clone <this repo> && cd vowcraft
 docker compose up --build
 # → http://localhost:3000/dashboard/action-items
 ```
@@ -62,7 +62,7 @@ npm run dev
 
 ## Your data, and how not to lose it
 
-Accounts live in the `voice2brd_db-data` Docker volume, which **survives**
+Accounts live in the `vowcraft_db-data` Docker volume, which **survives**
 `docker compose down`, `restart`, and `up --build`. It is destroyed only by
 `docker compose down -v` or `docker volume rm` — nothing in normal use needs either.
 
@@ -93,7 +93,7 @@ Because `-v` is one character away from `down`, backups exist:
 ```bash
 npm run db:backup:accounts   # identity, settings, roster, keys — the irreplaceable part
 npm run db:backup            # everything
-npm run db:restore backups/voice2brd-accounts-<stamp>.sql
+npm run db:restore backups/vowcraft-accounts-<stamp>.sql
 ```
 
 An accounts restore is idempotent, replaces the seeded account cleanly, and re-seeds

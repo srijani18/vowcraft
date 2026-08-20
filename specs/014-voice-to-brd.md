@@ -5,7 +5,7 @@ again to refine it.*
 
 ## 1. Purpose
 
-The tool is named Voice2BRD, and until now its landing page was an analytics overview —
+The tool is named Vowcraft, and until now its landing page was an analytics overview —
 the thing you look at *after* doing work, presented as the thing you do first. This spec
 makes the primary act primary: sign in, press one button, talk, and watch a BRD assemble
 itself from what you said.

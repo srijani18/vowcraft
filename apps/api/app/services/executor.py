@@ -33,7 +33,7 @@ from typing import Any, Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from voice2brd_db import ActionItem, ExecutionAttempt, IntegrationAccount, Transcript, now_ms
+from vowcraft_db import ActionItem, ExecutionAttempt, IntegrationAccount, Transcript, now_ms
 
 from app.core.config import Settings
 from app.core.crypto import default_idempotency_key, decrypt

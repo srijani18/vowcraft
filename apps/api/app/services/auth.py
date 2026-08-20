@@ -19,7 +19,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from voice2brd_db import User
+from vowcraft_db import User
 
 from app.core.config import Settings
 from app.core.exceptions import AppError, conflict, unauthorized, unprocessable

@@ -106,16 +106,16 @@ describe('cookie attributes — SPEC-006 §3', () => {
   })
 
   test('Secure is set when served over https', async () => {
-    assert.equal((await withAppUrl('https://voice2brd.example')).secure, true)
+    assert.equal((await withAppUrl('https://vowcraft.example')).secure, true)
   })
 
   test('a trailing path on APP_URL does not confuse the check', async () => {
-    assert.equal((await withAppUrl('https://voice2brd.example/app')).secure, true)
+    assert.equal((await withAppUrl('https://vowcraft.example/app')).secure, true)
     assert.equal((await withAppUrl('http://localhost:3000/')).secure, false)
   })
 
   test('httpOnly and SameSite are always set, regardless of scheme', async () => {
-    for (const url of ['http://localhost:3000', 'https://voice2brd.example']) {
+    for (const url of ['http://localhost:3000', 'https://vowcraft.example']) {
       const options = await withAppUrl(url)
       assert.equal(options.httpOnly, true, 'the session cookie must not be readable by script')
       assert.equal(options.sameSite, 'lax')

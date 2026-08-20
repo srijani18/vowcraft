@@ -201,7 +201,7 @@ function Brand() {
         <i className="bi bi-soundwave text-base" aria-hidden />
       </span>
       <span className="leading-tight">
-        <span className="block text-sm font-semibold text-ink">Voice2BRD</span>
+        <span className="block text-sm font-semibold text-ink">Vowcraft</span>
         <span className="block text-[10px] uppercase tracking-wider text-ink-faint">voice → action</span>
       </span>
     </Link>

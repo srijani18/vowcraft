@@ -4,16 +4,16 @@
 # The web service waits for a *healthy* database rather than just a started one,
 # so the schema push in the entrypoint cannot race Postgres' first-boot init.
 
-name: voice2brd
+name: vowcraft
 
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: voice2brd
-      POSTGRES_PASSWORD: voice2brd
-      POSTGRES_DB: voice2brd
+      POSTGRES_USER: vowcraft
+      POSTGRES_PASSWORD: vowcraft
+      POSTGRES_DB: vowcraft
       # Faster and deterministic for a dev container; not a production setting.
       POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
     ports:
@@ -21,7 +21,7 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U voice2brd -d voice2brd']
+      test: ['CMD-SHELL', 'pg_isready -U vowcraft -d vowcraft']
       interval: 5s
       timeout: 5s
       retries: 12
@@ -42,7 +42,7 @@ services:
       api:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://voice2brd:voice2brd@db:5432/voice2brd?schema=public
+      DATABASE_URL: postgresql://vowcraft:vowcraft@db:5432/vowcraft?schema=public
       APP_URL: http://localhost:3000
       # Fixed dev key so the compose stack is reproducible. Generate your own for
       # anything beyond local use: openssl rand -base64 32
@@ -61,7 +61,7 @@ services:
       # which is what the *browser* uses and which `web`'s own "localhost" cannot reach
       # `api` through from inside this container.
       INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:8000}
-      DEV_USER_EMAIL: ${DEV_USER_EMAIL:-demo@voice2brd.test}
+      DEV_USER_EMAIL: ${DEV_USER_EMAIL:-demo@vowcraft.test}
       ALLOW_DEV_IDENTITY: '1'
       SEED_ON_BOOT: ${SEED_ON_BOOT:-true}
       # This file is unambiguously the local-testing stack, so it opts in to having
@@ -107,7 +107,7 @@ services:
       # Same value as `web`'s default, deliberately: BYOK credentials and OAuth tokens are
       # AES-256-GCM sealed by this key, and the two services read the same rows. A mismatch
       # here would make every existing secret undecryptable to whichever service disagreed.
-      DATABASE_URL: postgresql://voice2brd:voice2brd@db:5432/voice2brd
+      DATABASE_URL: postgresql://vowcraft:vowcraft@db:5432/vowcraft
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-dm9pY2UyYnJkLWxvY2FsLWRldi1rZXktMzJieXRlcyE=}
       # Also shared with `web` in production: a token this service issues has to verify
       # against the same secret if the frontend ever calls a route still served by Next.js
@@ -165,4 +165,11 @@ services:
       - '8080:8080'
 
 volumes:
+  # Pinned to the physical volume that already holds real data, created under the
+  # pre-rebrand project name. Do NOT change this to `vowcraft_db-data` — no such volume
+  # exists, and Compose would silently create a fresh empty one instead of reattaching to
+  # this one the next time this service recreates, which looks like nothing happened but
+  # is actually every account gone. Once you've migrated onto a genuinely new volume (not
+  # just relabeled this one), this pin can go.
   db-data:
+    name: voice2brd_db-data
