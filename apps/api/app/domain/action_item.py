@@ -151,3 +151,18 @@ def deadline_bucket(deadline: Optional[datetime], now: datetime) -> str:
     if diff <= timedelta(days=7):
         return "week"
     return "none"
+
+
+def timestamp_label(ms: Optional[int]) -> Optional[str]:
+    """`m:ss`, or `h:mm:ss` past an hour — the citation the reviewer clicks.
+
+    Shared by action items and decisions: both cite a moment in a transcript the same way.
+    """
+    if ms is None or ms < 0:
+        return None
+    total = ms // 1000
+    hours, remainder = divmod(total, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"

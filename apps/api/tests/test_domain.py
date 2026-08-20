@@ -15,6 +15,7 @@ from app.domain.action_item import (
     compute_readiness,
     deadline_bucket,
     review_sort_key,
+    timestamp_label,
     transition_error,
 )
 from app.domain.password_rules import dominates, is_common_password, validate_password
@@ -328,6 +329,25 @@ class TestDeadlineBucket:
         # local time would silently mis-bucket it depending on where the process runs.
         naive_deadline = (self.NOW + timedelta(hours=2)).replace(tzinfo=None)
         assert deadline_bucket(naive_deadline, self.NOW) == "today"
+
+
+class TestTimestampLabel:
+    """`m:ss`, or `h:mm:ss` past an hour — shared by action items and decisions."""
+
+    def test_none_is_none(self):
+        assert timestamp_label(None) is None
+
+    def test_negative_is_none(self):
+        assert timestamp_label(-1) is None
+
+    def test_zero_is_zero_colon_zero_zero(self):
+        assert timestamp_label(0) == "0:00"
+
+    def test_under_an_hour_is_m_ss(self):
+        assert timestamp_label(154_300) == "2:34"
+
+    def test_an_hour_or_more_is_h_mm_ss(self):
+        assert timestamp_label(3_723_000) == "1:02:03"
 
 
 class TestReviewSortKey:

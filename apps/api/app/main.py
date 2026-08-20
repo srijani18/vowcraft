@@ -26,6 +26,7 @@ from app.api.routes import (
     auth,
     brd,
     credentials,
+    decisions,
     health,
     ingest,
     profile,
@@ -124,6 +125,7 @@ def create_app() -> FastAPI:
     app.include_router(action_items.router, prefix="/api/action-items", tags=["action-items"])
     app.include_router(credentials.router, prefix="/api/credentials", tags=["credentials"])
     app.include_router(audit.router, prefix="/api/audit-log", tags=["audit"])
+    app.include_router(decisions.router, prefix="/api/decisions", tags=["decisions"])
     app.include_router(profile.router, prefix="/api/profile", tags=["profile"])
     app.include_router(settings_routes.router, prefix="/api/settings", tags=["settings"])
     return app

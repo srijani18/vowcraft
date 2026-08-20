@@ -29,7 +29,7 @@ os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("INTEGRATIONS_MODE", "mock")
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
-from vowcraft_db import ActionItem, Base, Segment, Speaker, Transcript, TranscriptAsset, User  # noqa: E402
+from vowcraft_db import ActionItem, Base, Decision, Segment, Speaker, Transcript, TranscriptAsset, User  # noqa: E402
 
 from app.core.config import Settings  # noqa: E402
 from app.domain.types import (  # noqa: E402
@@ -222,6 +222,25 @@ def make_segment(db_session):
             transcript_id=transcript.id, start_ms=start_ms, end_ms=end_ms, text=text,
             speaker_id=speaker.id if speaker else None, **overrides,
         )
+        db_session.add(row)
+        await db_session.flush()
+        return row
+
+    return _make
+
+
+@pytest.fixture
+def make_decision(db_session):
+    async def _make(transcript: Transcript, **overrides) -> Decision:
+        base = dict(
+            transcript_id=transcript.id,
+            statement="We will ship the invoicing module in October",
+            decided_by="Priya Raman",
+            source_timestamp_ms=1000,
+            source_quote="let's ship invoicing in October",
+        )
+        base.update(overrides)
+        row = Decision(**base)
         db_session.add(row)
         await db_session.flush()
         return row

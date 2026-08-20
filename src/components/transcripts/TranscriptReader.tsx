@@ -377,6 +377,13 @@ export function TranscriptReader({ transcript, initialAtMs, initialQuery }: Prop
               </Button>
             </Link>
           )}
+          {transcript.counts.decisions > 0 && (
+            <Link href={`/dashboard/insights?transcriptId=${transcript.id}`}>
+              <Button variant="secondary" icon="bi-lightbulb">
+                {transcript.counts.decisions} decisions
+              </Button>
+            </Link>
+          )}
           <div className="flex items-center gap-1">
             {(['txt', 'md', 'srt', 'vtt'] as const).map((format) => (
               <button

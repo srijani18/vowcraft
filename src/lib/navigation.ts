@@ -196,19 +196,19 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       {
         slug: 'insights',
         label: 'Decisions & summary',
-        href: '/dashboard/modules/insights',
+        href: '/dashboard/insights',
         icon: 'bi-lightbulb',
-        status: 'planned',
-        blurb: 'Decisions made, risks raised, open questions, executive summary.',
+        status: 'live',
+        blurb: 'Every decision a meeting settled, searchable across every recording.',
         detail:
           'The Decision table already exists and the POL_CONTRADICTS_DECISION guardrail already ' +
           'cites it — this module is the reading surface for that data.',
         spec: 'SPEC-020',
         highlights: [
           'Decisions with who made them and when',
-          'Risks and open questions',
-          'Auto-generated executive summary',
-          'Contradiction warnings against extracted actions',
+          'Every decision links back to its moment in the transcript',
+          'Searchable and filterable across every meeting',
+          'Meeting summaries alongside the decisions they came from',
         ],
       },
       {

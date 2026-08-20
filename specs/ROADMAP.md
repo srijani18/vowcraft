@@ -45,6 +45,7 @@ contracts the earlier phases will write into.**
 | 3.9 | Bulk approve / reject | SPEC-001 §9 | **implemented** |
 | 3.10 | Corrections captured | SPEC-003 §8 | **implemented** (capture only) |
 | 3.11 | Dependencies, multi-step | SPEC-002 §8 | gates implemented, orchestrator planned |
+| 3.12 | Decisions & summary reading surface | SPEC-020 | **implemented** |
 
 ## Cross-cutting — shipped alongside Phase 3
 | # | Feature | Spec | Status |

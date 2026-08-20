@@ -37,6 +37,7 @@ from app.domain.action_item import (
     compute_readiness,
     deadline_bucket,
     review_sort_key,
+    timestamp_label,
     transition_error,
 )
 from app.domain.risk import RISK_META, classify_risk, effective_gate
@@ -105,18 +106,6 @@ def _values_equal(field: str, prev: Any, next_value: Any) -> bool:
     if field == "payload":
         return (prev or {}) == (next_value or {})
     return _scalar(prev) == _scalar(next_value)
-
-
-def _timestamp_label(ms: Optional[int]) -> Optional[str]:
-    """`m:ss`, or `h:mm:ss` past an hour — the citation the reviewer clicks."""
-    if ms is None or ms < 0:
-        return None
-    total = ms // 1000
-    hours, remainder = divmod(total, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{seconds:02d}"
-    return f"{minutes}:{seconds:02d}"
 
 
 @dataclass
@@ -219,7 +208,7 @@ def to_dto(row: ActionItem, inputs: EvaluationInputs, now: datetime) -> dict[str
         "ownerEmail": row.owner_email,
         "deadline": _iso(row.deadline),
         "sourceTimestampMs": row.source_timestamp_ms,
-        "sourceTimestampLabel": _timestamp_label(row.source_timestamp_ms),
+        "sourceTimestampLabel": timestamp_label(row.source_timestamp_ms),
         "sourceQuote": row.source_quote,
         "reasoning": row.reasoning,
         "payload": core.payload,
