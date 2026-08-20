@@ -1,0 +1,314 @@
+@import 'bootstrap-icons/font/bootstrap-icons.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Palette: #224248 · #325E6A · #44A1A4 · #FF9A00
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ *   #224248  primary dark    — panel and header backgrounds
+ *   #325E6A  secondary dark  — cards, inputs, raised surfaces
+ *   #44A1A4  accent teal     — buttons, links, highlights
+ *   #FF9A00  accent orange   — primary CTAs, warnings, important highlights
+ *
+ * Every pairing below was measured against WCAG 2.1. Four numbers shaped the
+ * system:
+ *
+ *   #224248 on #EEF4F5  →  9.7:1   the primary dark IS the light-mode body text
+ *   #E6F0F2 on #0E2126  → 14.3:1   dark-mode body text
+ *   #44A1A4 on #EEF4F5  →  2.8:1   ← the teal cannot carry text on a pale ground
+ *   #FF9A00 on #EEF4F5  →  1.9:1   ← nor can the orange, even less so
+ *
+ * Hence the central rule: **both accents are fills and borders, never body
+ * text.** Accent text uses a tint — lightened in dark (#57B6B9, 4.5:1 on the
+ * panel), darkened in light (#327779, 4.7:1 on the page). Both accent fills carry
+ * the same near-black label (#0E2126) in *both* themes, at 5.4:1 on teal and
+ * 7.8:1 on orange, so a button looks identical either way.
+ *
+ * The page is one step deeper than #224248 (#0E2126, derived on the same hue) for
+ * a reason: with #224248 as the page, #325E6A cards separate by only 1.5:1 and the
+ * teal drops to 3.5:1. Going deeper lets *both* given darks work as real surfaces
+ * and lifts the teal to 5.4:1.
+ *
+ * One documented constraint: #325E6A is light enough (L=0.097) that only `ink` and
+ * `ink-muted` clear 4.5:1 on it. `ink-faint` must not sit on a full-opacity
+ * #325E6A — `tests/contrast.test.ts` enforces this.
+ *
+ * Channels are raw so Tailwind's `/opacity` modifiers work everywhere. Light is
+ * the bare `:root` default; dark applies via `prefers-color-scheme` when the user
+ * has expressed no preference, and via `data-theme="dark"` when they have — so
+ * **system preference is what a first-time visitor gets**, and the toggle wins in
+ * both directions afterwards.
+ */
+
+:root {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ── the four given colours, always available by name */
+  --deep: 34 66 72;      /* #224248 */
+  --mid: 50 94 106;      /* #325E6A */
+  --teal: 68 161 164;    /* #44A1A4 */
+  --orange: 255 154 0;   /* #FF9A00 */
+  --paper: 230 240 242;  /* #E6F0F2 — derived light tone, dark-mode ink */
+  --abyss: 14 33 38;     /* #0E2126 — derived deep tone, page + fill labels */
+
+  /* ── light theme (default) */
+  --bg: 238 244 245;          /* #EEF4F5 */
+  --surface: 247 250 251;     /* #F7FAFB */
+  --surface-strong: 255 255 255;
+  --edge: 34 66 72;           /* the primary dark, at low alpha */
+  --edge-alpha: 0.16;
+
+  --ink: 34 66 72;            /* #224248   9.7:1  AAA — the palette's own dark */
+  --ink-muted: 50 94 106;     /* #325E6A   6.4:1  AA  — the palette's own mid */
+  --ink-faint: 78 114 124;    /* #4E727C   4.7:1  AA  */
+
+  --accent: 50 119 121;       /* #327779   4.7:1  AA  — accent TEXT */
+  --accent-fill: 68 161 164;  /* #44A1A4 — fill only; 2.8:1 as text */
+  --accent-on: 14 33 38;      /* #0E2126 on teal → 5.4:1 */
+  /* A ring, because the fill alone is 2.8:1 against the page — under WCAG 1.4.11's
+     3:1 bar for a UI component boundary. The border is what makes the button's
+     edge perceivable without abandoning the given colour. */
+  --accent-edge: 50 119 121;  /* #327779 → 4.7:1 against the page */
+
+  --cta: 255 154 0;           /* #FF9A00 — fill only; 1.9:1 as text */
+  --cta-on: 14 33 38;         /* #0E2126 on orange → 7.8:1 */
+  --cta-edge: 158 95 0;       /* #9E5F00 → 4.6:1 against the page */
+
+  --ok: 15 115 70;            /* #0F7346   5.3:1  AA  */
+  --ok-on: 230 240 242;
+  --warn: 158 95 0;           /* #9E5F00   4.6:1  AA — a darkened orange, for TEXT */
+  --danger: 179 38 30;        /* #B3261E   5.9:1  AA  */
+  --danger-on: 230 240 242;
+
+  --glow-accent: 0 0 0 1px rgb(68 161 164 / 0.5), 0 6px 18px -6px rgb(68 161 164 / 0.5);
+  --glow-cta: 0 0 0 1px rgb(255 154 0 / 0.55), 0 6px 18px -6px rgb(255 154 0 / 0.5);
+  --glow-card: 0 1px 0 0 rgb(255 255 255 / 0.7) inset, 0 0 0 1px rgb(34 66 72 / 0.09),
+               0 10px 28px -14px rgb(34 66 72 / 0.28);
+  --glow-card-hover: 0 1px 0 0 rgb(255 255 255 / 0.8) inset, 0 0 0 1px rgb(68 161 164 / 0.45),
+                     0 14px 34px -14px rgb(68 161 164 / 0.3);
+
+  --shadow-strength: 0.16;
+  color-scheme: light;
+}
+
+/* System preference, only when the user has expressed none — so a first-time
+ * visitor gets whatever their OS is set to. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    /* ── dark theme
+     * Page is a derived deepening of #224248 so that both given darks can serve as
+     * real, distinguishable surfaces above it. */
+    --bg: 14 33 38;             /* #0E2126 */
+    --surface: 34 66 72;        /* #224248 — primary dark, as specified */
+    --surface-strong: 50 94 106;/* #325E6A — secondary dark, as specified */
+    --edge: 230 240 242;
+    --edge-alpha: 0.14;
+
+    --ink: 230 240 242;         /* #E6F0F2  14.3:1  AAA */
+    --ink-muted: 198 217 221;   /* #C6D9DD  11.4:1  AAA — also 4.9:1 on #325E6A */
+    --ink-faint: 147 176 183;   /* #93B0B7   7.2:1  AAA — 4.7:1 on the #224248 panel */
+
+    --accent: 87 182 185;       /* #57B6B9   7.0:1  AAA — accent TEXT, a lifted teal */
+    --accent-fill: 68 161 164;  /* #44A1A4 — the given teal, as a fill */
+    --accent-on: 14 33 38;      /* #0E2126 on teal → 5.4:1 */
+    /* On the dark page the fills clear 3:1 unaided (5.4:1 and 7.8:1), so the ring
+       is the fill itself — the component markup needs no per-theme branch. */
+    --accent-edge: 68 161 164;
+
+    --cta: 255 154 0;           /* #FF9A00 — the given orange, as a fill */
+    --cta-on: 14 33 38;         /* #0E2126 on orange → 7.8:1 */
+    --cta-edge: 255 154 0;
+
+    --ok: 63 190 134;           /* #3FBE86   7.1:1  AAA */
+    --ok-on: 14 33 38;
+    --warn: 255 154 0;          /* #FF9A00   7.8:1  AAA — the orange reads as text here */
+    --danger: 255 131 117;      /* #FF8375   6.9:1  AA  */
+    --danger-on: 14 33 38;
+
+    /* Glow is additive light on a dark ground, so it lifts without washing out
+       the text sitting on top of it. */
+    --glow-accent: 0 0 0 1px rgb(68 161 164 / 0.6), 0 0 22px -2px rgb(68 161 164 / 0.55);
+    --glow-cta: 0 0 0 1px rgb(255 154 0 / 0.6), 0 0 24px -2px rgb(255 154 0 / 0.5);
+    --glow-card: 0 1px 0 0 rgb(230 240 242 / 0.06) inset, 0 0 0 1px rgb(68 161 164 / 0.18),
+                 0 18px 48px -20px rgb(14 33 38 / 0.9);
+    --glow-card-hover: 0 1px 0 0 rgb(230 240 242 / 0.10) inset, 0 0 0 1px rgb(68 161 164 / 0.5),
+                       0 20px 56px -18px rgb(68 161 164 / 0.28);
+
+    --shadow-strength: 0.75;
+    color-scheme: dark;
+  }
+}
+
+/* An explicit choice wins over the system preference, in both directions. */
+:root[data-theme='dark'] {
+  /* ── dark theme
+   * Page is a derived deepening of #224248 so that both given darks can serve as
+   * real, distinguishable surfaces above it. */
+  --bg: 14 33 38;             /* #0E2126 */
+  --surface: 34 66 72;        /* #224248 — primary dark, as specified */
+  --surface-strong: 50 94 106;/* #325E6A — secondary dark, as specified */
+  --edge: 230 240 242;
+  --edge-alpha: 0.14;
+
+  --ink: 230 240 242;         /* #E6F0F2  14.3:1  AAA */
+  --ink-muted: 198 217 221;   /* #C6D9DD  11.4:1  AAA — also 4.9:1 on #325E6A */
+  --ink-faint: 147 176 183;   /* #93B0B7   7.2:1  AAA — 4.7:1 on the #224248 panel */
+
+  --accent: 87 182 185;       /* #57B6B9   7.0:1  AAA — accent TEXT, a lifted teal */
+  --accent-fill: 68 161 164;  /* #44A1A4 — the given teal, as a fill */
+  --accent-on: 14 33 38;      /* #0E2126 on teal → 5.4:1 */
+  /* On the dark page the fills clear 3:1 unaided (5.4:1 and 7.8:1), so the ring
+     is the fill itself — the component markup needs no per-theme branch. */
+  --accent-edge: 68 161 164;
+
+  --cta: 255 154 0;           /* #FF9A00 — the given orange, as a fill */
+  --cta-on: 14 33 38;         /* #0E2126 on orange → 7.8:1 */
+  --cta-edge: 255 154 0;
+
+  --ok: 63 190 134;           /* #3FBE86   7.1:1  AAA */
+  --ok-on: 14 33 38;
+  --warn: 255 154 0;          /* #FF9A00   7.8:1  AAA — the orange reads as text here */
+  --danger: 255 131 117;      /* #FF8375   6.9:1  AA  */
+  --danger-on: 14 33 38;
+
+  /* Glow is additive light on a dark ground, so it lifts without washing out
+     the text sitting on top of it. */
+  --glow-accent: 0 0 0 1px rgb(68 161 164 / 0.6), 0 0 22px -2px rgb(68 161 164 / 0.55);
+  --glow-cta: 0 0 0 1px rgb(255 154 0 / 0.6), 0 0 24px -2px rgb(255 154 0 / 0.5);
+  --glow-card: 0 1px 0 0 rgb(230 240 242 / 0.06) inset, 0 0 0 1px rgb(68 161 164 / 0.18),
+               0 18px 48px -20px rgb(14 33 38 / 0.9);
+  --glow-card-hover: 0 1px 0 0 rgb(230 240 242 / 0.10) inset, 0 0 0 1px rgb(68 161 164 / 0.5),
+                     0 20px 56px -18px rgb(68 161 164 / 0.28);
+
+  --shadow-strength: 0.75;
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    /* Flat, single-token background — no gradient mesh. */
+    background-color: rgb(var(--bg));
+    color: rgb(var(--ink));
+    font-family: var(--font-sans);
+    min-height: 100dvh;
+  }
+
+  /* Focus ring uses the flame at full strength: it is a UI indicator, where
+     3:1 is the bar, and it must stay visible on both themes. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent-fill));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgb(var(--accent-fill) / 0.3);
+    color: rgb(var(--ink));
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--ink-faint) / 0.4);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--ink-faint) / 0.7);
+    background-clip: content-box;
+  }
+
+  /* Form controls inherit the theme rather than the OS. */
+  input, textarea, select, button { font: inherit; color: inherit; }
+
+  /* Native dropdown options are painted by the OS, so they need explicit colours
+     or they render white-on-white in dark mode. */
+  option { background-color: rgb(var(--surface-strong)); color: rgb(var(--ink)); }
+}
+
+@layer components {
+  .panel {
+    background-color: rgb(var(--surface) / 0.85);
+    border: 1px solid rgb(var(--edge) / var(--edge-alpha));
+    box-shadow: var(--glow-card);
+    backdrop-filter: blur(14px);
+    transition: box-shadow 220ms ease, border-color 220ms ease, transform 220ms ease;
+  }
+
+  /* The hover glow shifts from maroon to flame: an interactive card should feel
+     like it lights up, not merely like it gained a border. */
+  a.panel:hover,
+  button.panel:hover,
+  .panel-interactive:hover {
+    box-shadow: var(--glow-card-hover);
+    transform: translateY(-1px);
+  }
+
+  .panel-strong {
+    background-color: rgb(var(--surface-strong) / 0.92);
+    border: 1px solid rgb(var(--edge) / var(--edge-alpha));
+    box-shadow: var(--glow-card);
+    backdrop-filter: blur(18px);
+  }
+
+  /* Explicit glow utilities, for the few elements that should always be lit
+     rather than only on hover. */
+  .glow-accent { box-shadow: var(--glow-accent); }
+  .glow-cta { box-shadow: var(--glow-cta); }
+  .glow-card { box-shadow: var(--glow-card); }
+
+  /* A hairline of the palette across the top edge, replacing the old glow. */
+  .lit-edge { position: relative; }
+  .lit-edge::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(var(--mid) / 0.55) 18%,
+      rgb(var(--teal) / 0.95) 45%,
+      rgb(var(--orange) / 0.85) 72%,
+      transparent
+    );
+    box-shadow: 0 0 12px 0 rgb(var(--teal) / 0.5);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    border: 1px solid rgb(var(--edge) / var(--edge-alpha));
+    background: rgb(var(--surface-strong) / 0.6);
+    padding: 0.25rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgb(var(--ink-muted));
+  }
+
+  .mono-num {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,28 @@
+# ── web tier
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# ── database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# ── config & validation
+pydantic==2.10.4
+# Lets Pydantic evaluate `X | None` annotations on Python < 3.10. The container runs 3.12
+# where the syntax is native; this exists so local development on macOS system Python needs
+# no separate toolchain, and so the annotation style is uniform across the codebase rather
+# than varying by which file happens to be a Pydantic model.
+eval_type_backport==0.2.2
+pydantic-settings==2.7.0
+email-validator==2.2.0
+
+# ── security
+# `cryptography` supplies both AES-256-GCM and scrypt. hashlib.scrypt is deliberately
+# unused: it is absent when Python links against LibreSSL (macOS system Python).
+cryptography==44.0.0
+pyjwt==2.10.1
+
+# ── outbound
+httpx==0.28.1

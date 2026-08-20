@@ -1,0 +1,659 @@
+// Voice2BRD — system of record.
+// Traceability: SPEC-000 §5 (extraction contract), SPEC-001 §5/§10 (status, DTO),
+// SPEC-002 §7 (executionResult), SPEC-003 §7/§8 (audit, corrections),
+// SPEC-004 (credential vault).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────── identity ──
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  image     String?
+  createdAt DateTime @default(now())
+
+  /// scrypt hash, format `s1.<saltB64url>.<hashB64url>` — never a bare digest.
+  /// Nullable because an OAuth-only account has no password (SPEC-005 §3).
+  passwordHash      String?
+  passwordUpdatedAt DateTime?
+
+  /// Onboarding walkthrough state (SPEC-005 §6). `null` ⇒ show the tour.
+  onboardingCompletedAt DateTime?
+  onboardingSkipped     Boolean   @default(false)
+
+  /// Set when the account is scheduled for deletion; the row is retained until
+  /// the grace period elapses so an accidental delete is recoverable.
+  deletionRequestedAt DateTime?
+
+  settings     UserSettings?
+  transcripts  Transcript[]
+  brdDocuments BrdDocument[]
+  identities   AuthIdentity[]
+  resetTokens  PasswordResetToken[]
+  integrations IntegrationAccount[]
+  credentials  Credential[]
+  teamMembers  TeamMember[]
+  auditLogs    AuditLog[]
+  approvals    ApprovalRequest[]    @relation("approver")
+  busyBlocks   CalendarBusyBlock[]
+}
+
+/// Per-user guardrail envelope. Every field here is read by the pure rule
+/// engine as `RuleContext.settings` — SPEC-003 §2.
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  timeZone            String   @default("Asia/Kolkata")
+  workdayStart        String   @default("09:00") // HH:mm, local to timeZone
+  workdayEnd          String   @default("18:00")
+  allowWeekends       Boolean  @default(false)
+  maxMeetingMinutes   Int      @default(120)
+  minBufferMinutes    Int      @default(15)
+  orgDomains          String[] @default([]) // recipients here count as internal
+  autoExecuteLowRisk  Boolean  @default(false) // SPEC-003 §5 — fail closed
+  budgetApprovalLimit Int      @default(1000) // in orgCurrency units
+  orgCurrency         String   @default("USD")
+
+  /// { CALENDAR: 'EXPLICIT_APPROVAL', EMAIL: 'EXPLICIT_APPROVAL_WITH_CONFIRMATION', … }
+  approvalThresholds Json @default("{}")
+  /// Provider override per action type: { CALENDAR: 'google_calendar', … }
+  providerRouting    Json @default("{}")
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Roster used by VAL_OWNER_KNOWN and to resolve an owner name to an address.
+model TeamMember {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name  String
+  email String
+  role  String?
+
+  @@unique([userId, email])
+  @@index([userId, name])
+}
+
+// ─────────────────────────────────────────────────── transcription (P1/P2) ──
+// Not produced by this slice; the dashboard joins to it for grounding context.
+
+model Transcript {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title      String
+  sourceType TranscriptSource @default(UPLOAD)
+  sourceUri  String?
+  language   String? // BCP-47, auto-detected
+  durationMs Int?
+  recordedAt DateTime?
+  status     TranscriptStatus @default(READY)
+  summary    String?
+  createdAt  DateTime         @default(now())
+
+  // ── pipeline state, SPEC-010 §5
+  /// uploaded | transcribing | extracting | done — kept on the row so a reload does
+  /// not lose progress and a restart leaves a diagnosable state.
+  stage              String    @default("done")
+  progress           Int       @default(100)
+  /// Recorded per stage, so a failure says which half broke and the other half's work
+  /// is not thrown away.
+  transcribeError    String?
+  extractError       String?
+  /// The machine-readable reason alongside the human sentence in `extractError`. The UI
+  /// branches on it: "add a key" and "the configured model does not exist" both fail
+  /// extraction, but only one of them is fixed by adding a key (SPEC-010 §3.4).
+  extractErrorCode   String?
+  /// The model that was asked, kept even when the call failed — a 404 is only actionable
+  /// if you can see which id produced it.
+  extractModel       String?
+  transcribedAt      DateTime?
+  extractedAt        DateTime?
+  transcribeProvider String?
+  extractProvider    String?
+  /// False when no provider supplied speaker labels — the UI says "speakers not
+  /// separated" rather than implying a single speaker (SPEC-010 §6).
+  diarized           Boolean   @default(false)
+
+  segments    Segment[]
+  speakers    Speaker[]
+  actionItems ActionItem[]
+  decisions   Decision[]
+  asset       TranscriptAsset?
+
+  @@index([userId, createdAt])
+  @@index([userId, status])
+}
+
+model Speaker {
+  id           String     @id @default(cuid())
+  transcriptId String
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  label       String // "Speaker 1"
+  displayName String? // "Marcus Vale" once identified
+  email       String?
+
+  segments Segment[]
+
+  @@unique([transcriptId, label])
+}
+
+model Segment {
+  id           String     @id @default(cuid())
+  transcriptId String
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  speakerId    String?
+  speaker      Speaker?   @relation(fields: [speakerId], references: [id], onDelete: SetNull)
+
+  startMs Int
+  endMs   Int
+  text    String
+
+  words Word[]
+
+  @@index([transcriptId, startMs])
+}
+
+/// Word-level timing (SPEC-011). Kept as its own table so the player can
+/// range-query a window without loading a whole transcript.
+model Word {
+  id        String  @id @default(cuid())
+  segmentId String
+  segment   Segment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  text       String
+  startMs    Int
+  endMs      Int
+  confidence Float?
+
+  @@index([segmentId, startMs])
+}
+
+/// Decisions recorded in the conversation. POL_CONTRADICTS_DECISION cites these.
+model Decision {
+  id           String     @id @default(cuid())
+  transcriptId String
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  statement         String
+  decidedBy         String?
+  sourceTimestampMs Int?
+  sourceQuote       String?
+  createdAt         DateTime @default(now())
+
+  @@index([transcriptId])
+}
+
+// ───────────────────────────────────────────────────── action items (P3) ──
+
+model ActionItem {
+  id           String     @id @default(cuid())
+  transcriptId String
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  // ── extraction contract, SPEC-000 §5
+  description       String
+  actionType        ActionType @default(NONE)
+  ownerName         String?
+  ownerEmail        String?
+  deadline          DateTime?
+  priority          Priority   @default(MEDIUM)
+  confidence        Confidence @default(MEDIUM)
+  sourceTimestampMs Int?
+  sourceQuote       String?
+  reasoning         String?
+
+  /// Provider-shaped execution payload; may be incomplete on arrival.
+  payload Json @default("{}")
+
+  // ── workflow state, SPEC-001 §5
+  status ActionStatus @default(PROPOSED)
+
+  // ── execution record, SPEC-002 §7
+  executionResult   Json?
+  executionAttempts Int       @default(0)
+  executedAt        DateTime?
+  provider          String?
+
+  // ── relationships, SPEC-002 §8 + SPEC-003 §4
+  supersededById String?
+  supersededBy   ActionItem?  @relation("supersedes", fields: [supersededById], references: [id], onDelete: SetNull)
+  supersedes     ActionItem[] @relation("supersedes")
+
+  parentId  String?
+  parent    ActionItem?  @relation("subtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks  ActionItem[] @relation("subtasks")
+  stepOrder Int?
+
+  dependsOnId String?
+  dependsOn   ActionItem?  @relation("dependency", fields: [dependsOnId], references: [id], onDelete: SetNull)
+  blocks      ActionItem[] @relation("dependency")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attempts    ExecutionAttempt[]
+  approvals   ApprovalRequest[]
+  corrections Correction[]
+  auditLogs   AuditLog[]
+
+  @@index([transcriptId, status])
+  @@index([status, priority, deadline])
+  @@index([ownerName])
+}
+
+/// One row per execution try. `idempotencyKey` is what makes execution
+/// exactly-once across process restarts — SPEC-002 §5 step 3.
+model ExecutionAttempt {
+  id           String     @id @default(cuid())
+  actionItemId String
+  actionItem   ActionItem @relation(fields: [actionItemId], references: [id], onDelete: Cascade)
+
+  idempotencyKey String
+  attemptNumber  Int
+  provider       String
+  mode           String // 'mock' | 'live'
+  outcome        AttemptOutcome @default(RUNNING)
+  externalId     String?
+  externalUrl    String?
+  errorCode      String?
+  errorMessage   String?
+  durationMs     Int?
+  startedAt      DateTime       @default(now())
+  finishedAt     DateTime?
+
+  @@unique([actionItemId, idempotencyKey, attemptNumber])
+  @@index([idempotencyKey, outcome])
+}
+
+/// Human-in-the-loop approval record — SPEC-003 §9. Expires into DEFERRED.
+model ApprovalRequest {
+  id           String     @id @default(cuid())
+  actionItemId String
+  actionItem   ActionItem @relation(fields: [actionItemId], references: [id], onDelete: Cascade)
+
+  riskTier     RiskTier
+  requiredGate ApprovalGate
+  state        ApprovalState @default(PENDING)
+  approverId   String?
+  approver     User?         @relation("approver", fields: [approverId], references: [id], onDelete: SetNull)
+  decidedAt    DateTime?
+  decisionNote String?
+  /// Snapshot of what was shown to the human, so the record is meaningful later.
+  presented    Json
+  expiresAt    DateTime
+  createdAt    DateTime      @default(now())
+
+  @@index([state, expiresAt])
+}
+
+/// Every human edit, kept as future few-shot material — SPEC-003 §8.
+model Correction {
+  id           String     @id @default(cuid())
+  actionItemId String
+  actionItem   ActionItem @relation(fields: [actionItemId], references: [id], onDelete: Cascade)
+
+  field             String
+  beforeValue       Json?
+  afterValue        Json?
+  transcriptExcerpt String?
+  correctedBy       String?
+  createdAt         DateTime @default(now())
+
+  @@index([field, createdAt])
+}
+
+/// Append-only. No update/delete path exists in the codebase — SPEC-003 §7.
+model AuditLog {
+  id           String      @id @default(cuid())
+  at           DateTime    @default(now())
+  actorType    ActorType   @default(USER)
+  actorId      String?
+  actor        User?       @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  event        String
+  actionItemId String?
+  actionItem   ActionItem? @relation(fields: [actionItemId], references: [id], onDelete: Cascade)
+  before       Json?
+  after        Json?
+  metadata     Json?
+  requestId    String?
+
+  @@index([actionItemId, at])
+  @@index([event, at])
+}
+
+// ──────────────────────────────────────────────────────── integrations ──
+
+/// OAuth-connected third-party account. Tokens are AES-256-GCM ciphertext,
+/// never plaintext, never returned by any API — SPEC-002 §4.
+model IntegrationAccount {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider          String // 'google_calendar' | 'notion' | 'gmail' | 'slack'
+  externalAccountId String?
+  accountLabel      String?
+  scopes            String[]  @default([])
+  accessTokenEnc    String?
+  refreshTokenEnc   String?
+  expiresAt         DateTime?
+  needsReauth       Boolean   @default(false)
+  connectedAt       DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([userId, provider])
+}
+
+/// Single-use, signed, short-lived OAuth state + PKCE verifier — SPEC-002 §4.
+///
+/// Serves two flows. `purpose = "integration"` connects a provider to an account
+/// that already exists, so `userId` is set. `purpose = "signin"` authenticates
+/// someone who has no account yet (SPEC-007 §3.1), so `userId` is null and the row
+/// carries the OIDC `nonce` and the post-login destination instead.
+model OAuthState {
+  state        String    @id
+  userId       String?
+  purpose      String    @default("integration")
+  provider     String
+  codeVerifier String
+  redirectUri  String
+  /// OIDC nonce, echoed in the id_token and compared on return.
+  nonce        String?
+  /// Same-origin path to land on afterwards. Carried here rather than in the query
+  /// string so it cannot be tampered with mid-flight.
+  nextPath     String?
+  consumedAt   DateTime?
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+
+  @@index([expiresAt])
+}
+
+/// A federated identity — SPEC-007 §3.4.
+///
+/// The unique key is `(provider, providerAccountId)`, never the email: a Google
+/// account's email can change, its `sub` cannot.
+model AuthIdentity {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider          String // 'google'
+  providerAccountId String
+  email             String?
+  name              String?
+  avatarUrl         String?
+  createdAt         DateTime  @default(now())
+  lastLoginAt       DateTime?
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+/// Password reset tokens — SPEC-007 §2.2.
+///
+/// `tokenHash` is a SHA-256 of the value that went out in the email; the plaintext
+/// is never stored. A leak of this table therefore yields no working reset links.
+model PasswordResetToken {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  requestedIp String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+/// Bring-your-own-key vault — SPEC-004. `secretsEnc` is an AES-256-GCM
+/// ciphertext of a JSON object; `hints` holds masked previews only and is the
+/// only part any API is allowed to return.
+model Credential {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  module         CredentialModule
+  service        String // 'openai' | 'anthropic' | 'groq' | 'deepl' | 'notion' | …
+  label          String?
+  secretsEnc     String
+  hints          Json             @default("{}")
+  status         CredentialStatus @default(UNVERIFIED)
+  lastVerifiedAt DateTime?
+  lastError      String?
+  enabled        Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([userId, service])
+  @@index([userId, module])
+}
+
+/// The uploaded bytes — SPEC-010 §4.
+///
+/// Held in the database rather than on a filesystem or in object storage: at 25 MB it
+/// keeps the deployment to one stateful service, makes the upload transactional with
+/// its Transcript row, and means `docker compose down -v` really does erase
+/// everything. Object storage is the obvious swap at scale, isolated behind
+/// `server/ingest/storage.ts`.
+model TranscriptAsset {
+  id           String     @id @default(cuid())
+  transcriptId String     @unique
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  filename  String
+  mimeType  String
+  byteSize  Int
+  /// sha-256 of the bytes. Re-uploading identical audio reuses the transcript
+  /// instead of spending the free tier twice (SPEC-010 §5).
+  checksum  String
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  @@index([checksum])
+}
+
+/// Busy blocks used by SCHED_CONFLICT / SCHED_DND without calling out to a
+/// provider during rule evaluation (the rule engine is pure — SPEC-003 §2).
+model CalendarBusyBlock {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title    String?
+  startsAt DateTime
+  endsAt   DateTime
+  kind     BusyKind @default(BUSY)
+  source   String   @default("seed")
+
+  @@index([userId, startsAt])
+}
+
+// ────────────────────────────────────────────────────────────── enums ──
+
+enum TranscriptSource {
+  UPLOAD
+  MICROPHONE
+  URL
+  TEAMS
+  MEET
+}
+
+enum TranscriptStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum ActionType {
+  CALENDAR
+  TASK
+  EMAIL
+  REMINDER
+  NONE
+}
+
+enum Priority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum Confidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ActionStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+  DEFERRED
+  EXECUTING
+  EXECUTED
+  FAILED
+}
+
+enum AttemptOutcome {
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+enum RiskTier {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum ApprovalGate {
+  AUTO
+  EXPLICIT_APPROVAL
+  EXPLICIT_APPROVAL_WITH_CONFIRMATION
+}
+
+enum ApprovalState {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum ActorType {
+  USER
+  SYSTEM
+  AGENT
+}
+
+enum CredentialModule {
+  TRANSCRIPTION
+  EXTRACTION
+  TRANSLATION
+  EMBEDDING
+  INTEGRATION
+}
+
+enum CredentialStatus {
+  UNVERIFIED
+  VALID
+  INVALID
+}
+
+enum BusyKind {
+  BUSY
+  FOCUS
+  LUNCH
+  OOO
+}
+
+/// A business requirements document dictated by voice — SPEC-014 §4.
+///
+/// `content` is the *current* document, denormalised so listing and reading never replay
+/// revisions. Its shape is the §5 tool schema as JSON, not markdown: markdown is a
+/// rendering, and storing prose would force the refinement step to parse its own previous
+/// output back into structure (SPEC-014 §4.2).
+model BrdDocument {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Derived from what was said, never "Untitled" — SPEC-014 §5.
+  title   String
+  /// DRAFTING while a recording is open, READY once a generation completes. A DRAFTING
+  /// row with revisions but no content is an interrupted session, which is resumable
+  /// rather than garbage (SPEC-014 §4.3).
+  status  BrdStatus @default(DRAFTING)
+  /// Null only for a document interrupted before its first generation finished.
+  content Json?
+
+  /// Which provider and model produced the latest revision, for the same reason
+  /// Transcript records it: a wrong model id must be diagnosable (SPEC-010 §3.4).
+  provider  String?
+  model     String?
+  /// Set when a generation fails. The transcript of what was said is still kept.
+  lastError String?
+
+  revisions BrdRevision[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+/// One speaking turn and what it did — SPEC-014 §4, §6.
+///
+/// `content` is the *full* document as of this revision, not a diff: any point in history
+/// is readable without reconstruction, and one malformed entry cannot break the chain.
+model BrdRevision {
+  id         String      @id @default(cuid())
+  documentId String
+  document   BrdDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  /// 1 for the initial generation, then increasing. Ordering key for the history view.
+  ordinal       Int
+  /// The transcript of *this turn alone* — the answer to "what did I say that caused
+  /// this change?". The accumulated text is derivable; per-turn text is not (§4.1).
+  spokenText    String
+  content       Json
+  /// What this turn changed, in the model's own words. Without it refinement is a black
+  /// box and the user must diff two versions by eye (SPEC-014 §6).
+  changeSummary String?
+
+  provider String?
+  model    String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([documentId, ordinal])
+  @@index([documentId, ordinal])
+}
+
+enum BrdStatus {
+  DRAFTING
+  READY
+  FAILED
+}

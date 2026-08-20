@@ -1,0 +1,168 @@
+# Local target: `docker compose up --build` gives a working dashboard with seeded
+# data, no third-party credentials, and every action type executable in mock mode.
+#
+# The web service waits for a *healthy* database rather than just a started one,
+# so the schema push in the entrypoint cannot race Postgres' first-boot init.
+
+name: voice2brd
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: voice2brd
+      POSTGRES_PASSWORD: voice2brd
+      POSTGRES_DB: voice2brd
+      # Faster and deterministic for a dev container; not a production setting.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U voice2brd -d voice2brd']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      args:
+        # Build-time, not runtime: see the note in the Dockerfile.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_MARKETING_URL: ${NEXT_PUBLIC_MARKETING_URL:-http://localhost:3001}
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://voice2brd:voice2brd@db:5432/voice2brd?schema=public
+      APP_URL: http://localhost:3000
+      # Fixed dev key so the compose stack is reproducible. Generate your own for
+      # anything beyond local use: openssl rand -base64 32
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-dm9pY2UyYnJkLWxvY2FsLWRldi1rZXktMzJieXRlcyE=}
+      INTEGRATIONS_MODE: ${INTEGRATIONS_MODE:-mock}
+      INTEGRATIONS_LIVE: ${INTEGRATIONS_LIVE:-}
+      CREDENTIALS_ENV_LOCKED: ${CREDENTIALS_ENV_LOCKED:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NEXT_PUBLIC_MARKETING_URL: ${NEXT_PUBLIC_MARKETING_URL:-http://localhost:3001}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      # Same value as `api`'s: a token this server mints for a Server Component's
+      # backend calls (see src/lib/api-server.ts) has to verify there.
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-for-anything-beyond-local-use}
+      JWT_ALGORITHM: HS256
+      # Server-to-server, over the Compose network — distinct from NEXT_PUBLIC_API_URL,
+      # which is what the *browser* uses and which `web`'s own "localhost" cannot reach
+      # `api` through from inside this container.
+      INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:8000}
+      DEV_USER_EMAIL: ${DEV_USER_EMAIL:-demo@voice2brd.test}
+      ALLOW_DEV_IDENTITY: '1'
+      SEED_ON_BOOT: ${SEED_ON_BOOT:-true}
+      # This file is unambiguously the local-testing stack, so it opts in to having
+      # the password-reset link returned by the API when no mail provider is set.
+      # Never enable this on a deployment anyone else can reach.
+      DEV_EXPOSE_RESET_LINK: ${DEV_EXPOSE_RESET_LINK:-true}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-}
+      # Pass through any provider keys present in your shell or .env. Absent ones
+      # stay empty and the matching module simply shows as unconfigured.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      NOTION_CLIENT_ID: ${NOTION_CLIENT_ID:-}
+      NOTION_CLIENT_SECRET: ${NOTION_CLIENT_SECRET:-}
+      NOTION_API_KEY: ${NOTION_API_KEY:-}
+      NOTION_TASK_DATABASE_ID: ${NOTION_TASK_DATABASE_ID:-}
+      SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+      SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      DEEPL_API_KEY: ${DEEPL_API_KEY:-}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+    ports:
+      - '3000:3000'
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Same value as `web`'s default, deliberately: BYOK credentials and OAuth tokens are
+      # AES-256-GCM sealed by this key, and the two services read the same rows. A mismatch
+      # here would make every existing secret undecryptable to whichever service disagreed.
+      DATABASE_URL: postgresql://voice2brd:voice2brd@db:5432/voice2brd
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-dm9pY2UyYnJkLWxvY2FsLWRldi1rZXktMzJieXRlcyE=}
+      # Also shared with `web` in production: a token this service issues has to verify
+      # against the same secret if the frontend ever calls a route still served by Next.js
+      # during the migration window, and vice versa.
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-for-anything-beyond-local-use}
+      JWT_ALGORITHM: HS256
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # The frontend's origin(s), for CORS. A wildcard is refused at startup — see
+      # apps/api/app/core/config.py.
+      CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:3000}
+      INTEGRATIONS_MODE: ${INTEGRATIONS_MODE:-mock}
+      INTEGRATIONS_LIVE: ${INTEGRATIONS_LIVE:-}
+      CREDENTIALS_ENV_LOCKED: ${CREDENTIALS_ENV_LOCKED:-false}
+      SPEECH_PROVIDER: ${SPEECH_PROVIDER:-auto}
+      SPEECH_WS_URL: ${SPEECH_WS_URL:-}
+      FRONTEND_URL: ${APP_URL:-http://localhost:3000}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      NOTION_CLIENT_ID: ${NOTION_CLIENT_ID:-}
+      NOTION_CLIENT_SECRET: ${NOTION_CLIENT_SECRET:-}
+      SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+      SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+    ports:
+      - '8000:8000'
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:8000/health']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  # Optional: browse the database at http://localhost:8080
+  # `docker compose --profile tools up` to include it.
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    profiles: ['tools']
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+      ADMINER_DESIGN: dracula
+    ports:
+      - '8080:8080'
+
+volumes:
+  db-data:

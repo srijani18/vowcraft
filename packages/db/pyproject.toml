@@ -1,0 +1,17 @@
+[project]
+name = "voice2brd-db"
+version = "1.0.0"
+description = "Voice2BRD database schema, models and migrations. Deployed as a release job; imported by the backend."
+requires-python = ">=3.9"
+dependencies = [
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["voice2brd_db*"]

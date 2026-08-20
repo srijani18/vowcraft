@@ -1,0 +1,20 @@
+[project]
+name = "voice2brd-api"
+version = "1.0.0"
+description = "Voice2BRD backend: voice to business requirements, action extraction, guarded execution."
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# `asyncio_mode = auto` so an async test needs no decorator. The alternative is a
+# @pytest.mark.asyncio on every one, which is noise that gets forgotten — and a forgotten
+# mark makes the test silently pass without running.
+asyncio_mode = "auto"
+# Pinned explicitly: the default is changing, and an implicit loop scope that shifts under
+# a library upgrade is a class of flake nobody enjoys diagnosing.
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-q --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]

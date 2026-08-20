@@ -1,0 +1,20 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+*.log
+.DS_Store
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# Python (apps/api)
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Database dumps from scripts/db-backup.sh — they contain password hashes and
+# encrypted credentials, so they must never reach a repository.
+backups/

@@ -1,0 +1,52 @@
+{
+  "name": "voice2brd",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Voice-to-action AI agent — transcription, action-item extraction, human-approved execution.",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "prisma generate && next build",
+    "start": "next start -p 3000",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import ./tests/register.mjs --test tests/*.test.ts",
+    "test:watch": "node --import ./tests/register.mjs --test --watch tests/*.test.ts",
+    "smoke": "sh scripts/smoke.sh",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "node prisma/seed.mjs",
+    "db:reset": "prisma migrate reset --force",
+    "demo:reset": "sh scripts/reset-demo.sh",
+    "db:backup": "sh scripts/db-backup.sh",
+    "db:backup:accounts": "sh scripts/db-backup.sh accounts",
+    "db:restore": "sh scripts/db-restore.sh",
+    "dev:reset": "sh scripts/dev-reset.sh",
+    "db:studio": "prisma studio"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.mjs"
+  },
+  "dependencies": {
+    "@prisma/client": "6.2.1",
+    "bootstrap-icons": "1.11.3",
+    "clsx": "2.1.1",
+    "next": "15.1.6",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.7",
+    "@types/react": "19.0.7",
+    "@types/react-dom": "19.0.3",
+    "autoprefixer": "10.4.20",
+    "eslint": "9.18.0",
+    "eslint-config-next": "15.1.6",
+    "postcss": "8.5.1",
+    "prisma": "6.2.1",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.7.3"
+  },
+  "engines": { "node": ">=20.11" }
+}
