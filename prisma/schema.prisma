@@ -164,9 +164,28 @@ model Segment {
   endMs   Int
   text    String
 
-  words Word[]
+  words     Word[]
+  embedding SegmentEmbedding?
 
   @@index([transcriptId, startMs])
+}
+
+/// Embeddings for semantic search over transcript segments — SPEC-021.
+/// `embedding` is pgvector's `vector(512)` type, which Prisma cannot model natively;
+/// `Unsupported()` is declared here purely so `prisma db push --accept-data-loss`
+/// (docker/entrypoint.sh, run on every `web` boot) sees this table as already satisfied
+/// and does not drop it as unrecognized — SPEC-015 §3.1's "two services share one
+/// database" problem, just for a table instead of `alembic_version`. Prisma Client never
+/// reads or writes this table: Alembic owns its DDL (the `vector` extension and the HNSW
+/// index), and the FastAPI backend owns every row.
+model SegmentEmbedding {
+  id        String   @id @default(cuid())
+  segmentId String   @unique
+  segment   Segment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  embedding Unsupported("vector(512)")
+  provider  String
+  model     String
+  createdAt DateTime @default(now())
 }
 
 /// Word-level timing (SPEC-011). Kept as its own table so the player can

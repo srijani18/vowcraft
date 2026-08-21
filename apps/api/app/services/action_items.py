@@ -246,6 +246,7 @@ def to_dto(row: ActionItem, inputs: EvaluationInputs, now: datetime) -> dict[str
             if blocker
             else None
         ),
+        "blocksCount": len(getattr(row, "blocks", None) or []),
     }
 
 
@@ -327,6 +328,10 @@ class ActionItemService:
                 # the transcript relationship, just on a rarer path.
                 selectinload(ActionItem.superseded_by),
                 selectinload(ActionItem.depends_on),
+                # The forward direction of the same relationship, for `blocksCount` —
+                # SPEC-002 §8's orchestrator trigger only makes sense to show on an item
+                # that actually blocks something. Same MissingGreenlet reasoning as above.
+                selectinload(ActionItem.blocks),
             )
         )
 

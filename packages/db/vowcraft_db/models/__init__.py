@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .action import ActionItem, ApprovalRequest, Correction, ExecutionAttempt
+from .embedding import EMBEDDING_DIM, SegmentEmbedding
 from .identity import (
     AuthIdentity,
     OAuthState,
@@ -34,9 +35,11 @@ __all__ = [
     "Decision",
     "ExecutionAttempt",
     "IntegrationAccount",
+    "EMBEDDING_DIM",
     "OAuthState",
     "PasswordResetToken",
     "Segment",
+    "SegmentEmbedding",
     "Speaker",
     "TeamMember",
     "Transcript",

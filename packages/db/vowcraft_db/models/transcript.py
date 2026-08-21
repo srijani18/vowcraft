@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from .action import ActionItem
+    from .embedding import SegmentEmbedding
 
 from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, LargeBinary, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -122,6 +123,9 @@ class Segment(Base):
 
     words: Mapped[list["Word"]] = relationship(
         back_populates="segment", cascade="all, delete-orphan", order_by="Word.start_ms"
+    )
+    embedding: Mapped[Optional["SegmentEmbedding"]] = relationship(
+        back_populates="segment", cascade="all, delete-orphan", uselist=False
     )
 
     __table_args__ = (Index("Segment_transcriptId_startMs_idx", "transcriptId", "startMs"),)

@@ -8,7 +8,10 @@ name: vowcraft
 
 services:
   db:
-    image: postgres:16-alpine
+    # pgvector's own image, not plain postgres:16-alpine — same Postgres 16, same data
+    # format, adds the `vector` extension SPEC-021's migration needs. A drop-in swap: the
+    # existing data volume (pinned below) mounts under it unchanged.
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: vowcraft
@@ -138,6 +141,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      # Only `web` had this before SPEC-021 — harmlessly, since `web` never reads it either.
+      # `api` is what actually calls Voyage for embeddings, so it needs it for real.
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
       ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY:-}
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
     ports:

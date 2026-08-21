@@ -8,10 +8,22 @@ import { GROUP_META, GROUP_ORDER } from '@/domain/action-item'
 import type { Readiness } from '@/domain/types'
 import type { ActionItemDTO } from '@/server/action-items/dto'
 import type { ListResult } from '@/server/action-items/service'
-import { ApiError, bulkOp, executeItem, fetchList, patchItem, type ExecuteOutcome } from './api'
+import {
+  ApiError,
+  bulkOp,
+  executeItem,
+  fetchList,
+  getWorkflow,
+  patchItem,
+  runWorkflow,
+  type ExecuteOutcome,
+  type WorkflowOutcome,
+  type WorkflowPreview,
+} from './api'
 import { ActionItemCard } from './ActionItemCard'
 import { EditModal } from './EditModal'
 import { ExecuteModal } from './ExecuteModal'
+import { RunWorkflowModal } from './RunWorkflowModal'
 import {
   EMPTY_FILTERS,
   Filters,
@@ -51,6 +63,12 @@ export function Board({ initial, initialSearch }: { initial: ListResult; initial
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [executing, setExecuting] = useState(false)
   const [executeError, setExecuteError] = useState<string | null>(null)
+
+  const [workflowTarget, setWorkflowTarget] = useState<ActionItemDTO | null>(null)
+  const [workflowPreview, setWorkflowPreview] = useState<WorkflowPreview | null>(null)
+  const [loadingWorkflowPreview, setLoadingWorkflowPreview] = useState(false)
+  const [runningWorkflow, setRunningWorkflow] = useState(false)
+  const [workflowResult, setWorkflowResult] = useState<WorkflowOutcome | null>(null)
 
   const searchRef = useRef<HTMLInputElement>(null)
   useSearchHotkey(searchRef)
@@ -177,6 +195,42 @@ export function Board({ initial, initialSearch }: { initial: ListResult; initial
       startTransition(refresh)
     } finally {
       setExecuting(false)
+    }
+  }
+
+  // ── workflow orchestrator (SPEC-002 §8): preview the chain, then run it on confirm.
+  const openWorkflow = async (item: ActionItemDTO) => {
+    setWorkflowTarget(item)
+    setWorkflowPreview(null)
+    setWorkflowResult(null)
+    setLoadingWorkflowPreview(true)
+    try {
+      setWorkflowPreview(await getWorkflow(item.id))
+    } catch (err) {
+      toast.push({ tone: 'error', title: 'Could not preview the workflow', detail: (err as Error).message })
+      setWorkflowTarget(null)
+    } finally {
+      setLoadingWorkflowPreview(false)
+    }
+  }
+
+  const confirmWorkflow = async () => {
+    if (!workflowTarget) return
+    setRunningWorkflow(true)
+    try {
+      const outcome = await runWorkflow(workflowTarget.id, { confirmed: true })
+      setWorkflowResult(outcome)
+      toast.push({
+        tone: outcome.ok ? 'success' : 'info',
+        title: outcome.ok ? `${outcome.steps.length} steps executed` : 'Workflow stopped early',
+        detail: outcome.haltedAt?.message,
+      })
+      startTransition(refresh)
+    } catch (err) {
+      toast.push({ tone: 'error', title: 'Could not run the workflow', detail: (err as Error).message })
+      startTransition(refresh)
+    } finally {
+      setRunningWorkflow(false)
     }
   }
 
@@ -337,6 +391,7 @@ export function Board({ initial, initialSearch }: { initial: ListResult; initial
                       onDecide={(status) => void decide(item, status)}
                       onEdit={() => setEditing(item)}
                       onExecute={() => void openExecute(item)}
+                      onRunWorkflow={() => void openWorkflow(item)}
                     />
                   ))}
                 </div>
@@ -391,6 +446,17 @@ export function Board({ initial, initialSearch }: { initial: ListResult; initial
         error={executeError}
         onClose={() => setExecuteTarget(null)}
         onConfirm={confirmExecute}
+      />
+
+      <RunWorkflowModal
+        item={workflowTarget}
+        open={workflowTarget !== null}
+        preview={workflowPreview}
+        loadingPreview={loadingWorkflowPreview}
+        running={runningWorkflow}
+        result={workflowResult}
+        onClose={() => setWorkflowTarget(null)}
+        onConfirm={confirmWorkflow}
       />
     </>
   )

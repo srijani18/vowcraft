@@ -46,6 +46,7 @@ export function ActionItemCard({
   onDecide,
   onEdit,
   onExecute,
+  onRunWorkflow,
 }: {
   item: ActionItemDTO
   busy: boolean
@@ -54,6 +55,7 @@ export function ActionItemCard({
   onDecide(status: 'APPROVED' | 'REJECTED' | 'DEFERRED' | 'PROPOSED'): void
   onEdit(): void
   onExecute(): void
+  onRunWorkflow(): void
 }) {
   const [quoteOpen, setQuoteOpen] = useState(false)
   const executed = item.status === 'EXECUTED'
@@ -217,6 +219,16 @@ export function ActionItemCard({
             <i className="bi bi-link-45deg mr-1.5" aria-hidden />
             Blocked until “{item.dependsOn.description}” is done ({title(item.dependsOn.status)}).
           </p>
+        )}
+
+        {item.blocksCount > 0 && (
+          <button
+            onClick={onRunWorkflow}
+            className="mt-3 flex w-full items-center gap-1.5 rounded-lg border border-accent-fill/30 bg-accent-fill/10 px-2.5 py-1.5 text-left text-xs text-accent transition-colors hover:bg-accent-fill/20"
+          >
+            <i className="bi bi-diagram-3-fill" aria-hidden />
+            Blocks {item.blocksCount} other item{item.blocksCount === 1 ? '' : 's'} — run workflow
+          </button>
         )}
 
         {executed && result?.summary && (

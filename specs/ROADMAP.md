@@ -29,7 +29,7 @@ contracts the earlier phases will write into.**
 | 2.4 | Meeting summary | SPEC-010 §7 | **implemented** |
 | 2.6 | Free-tier provider registry (Groq/Gemini/Cerebras) | SPEC-010 §3 | **implemented** |
 | 2.7 | Sample mode — full pipeline with no API key | SPEC-010 §3 | **implemented** |
-| 2.5 | Semantic search (pgvector) | SPEC-021 | planned |
+| 2.5 | Semantic search (pgvector) | SPEC-021 | **implemented** (Voyage AI only; HNSW/cosine over Segment text) |
 
 ## Phase 3 — Execution ← **this repo**
 | # | Feature | Spec | Status |
@@ -44,7 +44,7 @@ contracts the earlier phases will write into.**
 | 3.8 | Audit log | SPEC-003 §7 | **implemented** |
 | 3.9 | Bulk approve / reject | SPEC-001 §9 | **implemented** |
 | 3.10 | Corrections captured | SPEC-003 §8 | **implemented** (capture only) |
-| 3.11 | Dependencies, multi-step | SPEC-002 §8 | gates implemented, orchestrator planned |
+| 3.11 | Dependencies, multi-step | SPEC-002 §8 | **implemented** (`dependsOnId` chain, sequential, halts entirely on first failure — `parentId`/`stepOrder` remain unused) |
 | 3.12 | Decisions & summary reading surface | SPEC-020 | **implemented** |
 
 ## Cross-cutting — shipped alongside Phase 3

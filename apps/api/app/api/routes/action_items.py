@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from app.api.dependencies import CurrentUser, RequestIdDep, SessionDep, SettingsDep
 from app.services.action_items import ActionItemService
 from app.services.executor import ExecutorService
+from app.services.orchestrator import OrchestratorService
 
 router = APIRouter()
 
@@ -75,6 +76,13 @@ class BulkBody(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=100)
     op: Literal["approve", "reject", "defer"]
     note: Optional[str] = Field(default=None, max_length=1000)
+
+
+class RunWorkflowBody(BaseModel):
+    """SPEC-002 §8. Deliberately minimal — see `OrchestratorService.run_workflow`'s
+    docstring for why `payloadOverride`/`idempotencyKey`/`dryRun` are not offered here."""
+
+    confirmed: bool = False
 
 
 def _service(session, settings) -> ActionItemService:
@@ -177,4 +185,30 @@ async def execute(
         confirmed=body.confirmed,
         dry_run=body.dryRun,
         request_id=request_id,
+    )
+
+
+@router.get("/{item_id}/workflow")
+async def preview_workflow(item_id: str, user: CurrentUser, session: SessionDep, settings: SettingsDep) -> dict:
+    """The chain `run_workflow` would attempt, and in what order — SPEC-002 §8."""
+    return await OrchestratorService(session, settings).preview_workflow(user.id, item_id)
+
+
+@router.post("/{item_id}/run-workflow")
+async def run_workflow(
+    item_id: str,
+    body: RunWorkflowBody,
+    user: CurrentUser,
+    session: SessionDep,
+    settings: SettingsDep,
+    request_id: RequestIdDep,
+) -> dict:
+    """Runs this item and everything downstream of it via `blocks` — SPEC-002 §8.
+
+    Does not walk upstream: this runs forward from wherever it is asked to start, not "the
+    whole workflow this item belongs to." No commit here, same reasoning as `/execute` —
+    each inner `execute()` call already manages its own transaction boundaries.
+    """
+    return await OrchestratorService(session, settings).run_workflow(
+        user.id, user.email, item_id, confirmed=body.confirmed, request_id=request_id,
     )

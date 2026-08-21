@@ -67,6 +67,9 @@ export interface ActionItemDTO {
   transcript: { id: string; title: string; recordedAt: string | null } | null
   supersededBy: { id: string; description: string } | null
   dependsOn: { id: string; description: string; status: string } | null
+  /** How many other items depend on this one — SPEC-002 §8. The affordance for
+   * triggering the workflow orchestrator only makes sense to show when this is > 0. */
+  blocksCount: number
 }
 
 export interface EvaluationInputs {

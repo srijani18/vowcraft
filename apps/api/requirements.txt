@@ -7,6 +7,9 @@ python-multipart==0.0.20
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
 alembic==1.14.0
+# Also pulled in transitively via packages/db, but imported directly here too
+# (app/db/session.py registers the asyncpg vector codec) — SPEC-021.
+pgvector==0.4.2
 
 # ── config & validation
 pydantic==2.10.4

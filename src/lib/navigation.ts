@@ -214,18 +214,19 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       {
         slug: 'search',
         label: 'Semantic search',
-        href: '/dashboard/modules/search',
+        href: '/dashboard/search',
         icon: 'bi-search',
-        status: 'planned',
+        status: 'live',
         blurb: 'Ask "what did they say about the budget?" and find it by meaning.',
         detail:
-          'pgvector over segment embeddings, so a query matches sense rather than exact wording. ' +
-          'The embedding provider is already in the credential vault.',
+          'pgvector (HNSW, cosine) over segment embeddings, so a query matches sense rather ' +
+          'than exact wording. Voyage AI is the embedding provider for now — its free tier ' +
+          'needs no card; add a key in Settings → API keys.',
         spec: 'SPEC-021',
         highlights: [
           'Meaning-based retrieval across every transcript',
           'Jump straight to the moment in the audio',
-          'Free embedding providers available (Voyage, Jina, local BGE)',
+          "Voyage AI's free tier needs no card",
         ],
       },
     ],
@@ -277,17 +278,17 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         href: '/dashboard/modules/workflows',
         icon: 'bi-diagram-2',
         status: 'planned',
-        blurb: '"Onboard a new hire" fans out into five ordered sub-tasks.',
+        blurb: 'An item that blocks others can run itself and everything downstream in one go.',
         detail:
-          'The schema and the gates already ship: `parentId` + `stepOrder` model sub-tasks, and ' +
-          '`dependsOnId` already refuses to execute until its blocker is done. What remains is the ' +
-          'fan-out orchestrator and its progress UI.',
+          'Shipped as a contextual action on the Action Items board, not a page of its own: any ' +
+          'card that blocks others (via `dependsOnId`) now offers "run workflow," which walks that ' +
+          'chain forward and calls the same executor for each step in order. (`parentId`/`stepOrder` ' +
+          'are separate, unused schema columns; nothing populates them, so they play no part in this.)',
         spec: 'SPEC-002 §8',
         highlights: [
-          'Sequential or parallel sub-task execution',
-          'Halts the chain on the first terminal failure',
-          'Dependency graph visualisation',
-          'Auto-notify when a blocker clears',
+          'Runs a chain of dependent items in one action, from any card that blocks others',
+          'Halts the whole run on the first terminal failure — nothing after it is attempted',
+          'Every step still re-checks its own approval and guardrails when it actually runs',
         ],
       },
     ],

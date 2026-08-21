@@ -212,10 +212,26 @@ async def run_pipeline(transcript_id: str, user_id: str, request_id: str) -> Non
 
     outcome = await extract_into(transcript_id, user_id, request_id)
 
+    # ── stage 3: embed, for semantic search (SPEC-021) — best-effort, same as extraction:
+    # a transcript with no embedding provider configured still finishes as READY.
+    from app.services.embeddings import embed_segments_into
+
+    try:
+        async with session_factory()() as session:
+            embed_outcome = await embed_segments_into(
+                session, transcript_id, user_id, CredentialService(session, settings)
+            )
+    except Exception as exc:  # noqa: BLE001 — never let embedding cost the pipeline's success
+        log.error("pipeline.embed_unhandled", err=exc)
+        embed_outcome = {"ok": False, "embedded": 0, "reason": "unexpected"}
+
     async with session_factory()() as session:
         # Status only; extract_into owns extractError/extractErrorCode/extractModel on
         # both its paths — writing them again here would leave a stale code behind a
         # fresh message when the two disagreed.
         await _mark(session, transcript_id, stage="done", progress=100, status="READY")
 
-    log.info("pipeline.done", extracted=outcome.get("created", 0), extractionOk=outcome.get("ok"))
+    log.info(
+        "pipeline.done", extracted=outcome.get("created", 0), extractionOk=outcome.get("ok"),
+        embedded=embed_outcome.get("embedded", 0), embeddingOk=embed_outcome.get("ok"),
+    )

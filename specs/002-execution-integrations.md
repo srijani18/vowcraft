@@ -172,15 +172,65 @@ One JSON column, versioned, written on success *and* failure:
 `payloadUsed` is what makes an execution reproducible after the fact; it is
 recorded even for failures. Recipient emails are stored, tokens never are.
 
-## 8. Multi-step workflows (forward compatibility)
+## 8. Multi-step workflows
 
-`ActionItem.parentId` + `stepOrder` model sub-tasks ("onboard a new hire" → five
-children). The executor runs children in `stepOrder`, halting the chain on the
-first terminal failure and marking the remainder `SKIPPED` with a reason. The
-parent's `executionResult.outcome` is `SUCCESS` only if every child succeeded.
-`dependsOnId` blocks execution until the dependency is `EXECUTED`
-(`409 blocked_by_dependency`). The schema and gates ship now; the fan-out
-orchestrator is Phase 4.
+Built on `dependsOnId`, the only ordering mechanism this schema actually
+populates. `ActionItem` also has `parentId` + `stepOrder` columns, present since
+the original schema, described in an earlier draft of this section as the basis
+for a "parent runs its children in `stepOrder`" orchestrator — but nothing in
+this codebase creates or reads a parent/child hierarchy through them; they are
+live, unused schema, not a partially-built feature. Recorded here so a future
+reader does not "restore" a mechanism that was never actually wired up.
+
+`dependsOnId` (a single FK per item, `ondelete=SET NULL`, backref `blocks`) is
+real and exercised: `prisma/seed.mjs`'s demo data links two items with it, and
+`ExecutorService.execute()` step 5 has enforced it since §5 shipped — a blocked
+item raises `409 blocked_by_dependency` until its blocker reaches `EXECUTED`.
+That gate is reactive only, checked when one item is executed individually.
+This section is the orchestrator that walks a whole chain of it at once.
+
+**`apps/api/app/services/orchestrator.py`'s `OrchestratorService`** composes
+`ExecutorService` rather than extending it, and adds no gate logic of its own —
+every safety property (the status gate, the dependency gate, idempotent replay)
+is already enforced by `execute()`, so running a chain is exactly "call
+`execute()` once per item, in an order where each item's blocker has already
+been attempted."
+
+- **`GET /api/action-items/{id}/workflow`** — read-only preview: this item plus
+  everything transitively reachable via `blocks`, in execution order. Because
+  `dependsOnId` is a single FK, the reachable set is a tree (an item can have
+  several dependents but only one blocker), discovered by a breadth-first walk,
+  siblings ordered by `createdAt`. A cap (`MAX_WORKFLOW_NODES = 200`) guards
+  against a corrupted or pathological graph, since nothing in the live API can
+  create a cycle but the FK itself does not forbid one.
+- **`POST /api/action-items/{id}/run-workflow`** (`{confirmed: bool}`) — runs
+  the discovered chain via `execute()`, in order. **Forward-only: it never walks
+  upstream.** The endpoint's contract is "run this item and everything
+  downstream of it," not "find the workflow this item belongs to" — every step
+  still individually re-checks its own approval and dependency gate inside
+  `execute()`, so silently pulling in an unapproved ancestor would buy nothing
+  over the reviewer clicking Execute on it directly, and there is no `Workflow`
+  entity to "belong to" in the first place. The natural trigger is the item
+  that itself has no blocker, which is also the only item the UI marks with a
+  "blocks N others" affordance.
+- **Halts the entire run — not just the failed branch — on the first error.**
+  `execute()` has no "FAILED via a normal 200" path: a terminal dispatch
+  failure always raises `AppError(502, "execution_failed", …)`, exactly like a
+  gate rejection (`409 blocked_by_dependency`/`not_approved`), so the loop needs
+  one `except AppError`, not two. On a branching chain (one item blocking
+  several others), a failure on one branch halts independent siblings too, even
+  ones nothing failed *for* — a deliberate choice: proving two branches are
+  genuinely independent before continuing is real graph analysis this schema
+  does not otherwise support (no priority between siblings, no parallelism
+  anywhere else in the execution path), and nothing is lost by it, since an
+  unattempted sibling is exactly as invocable afterward, directly or via a
+  fresh `run-workflow` call starting at it.
+- **No new `ActionStatus` value.** An unattempted item is left exactly as it
+  was — `APPROVED` and unexecuted is already an accurate, individually-gated
+  state, queryable and re-runnable without needing a `SKIPPED` marker.
+- Shipped as a contextual action on the Action Items board (a "blocks N
+  others → run workflow" affordance on the blocking item's card, opening a
+  preview-then-confirm modal), not a page of its own.
 
 ## 9. Acceptance criteria
 
@@ -194,3 +244,9 @@ orchestrator is Phase 4.
 4. `dryRun: true` returns a preview, leaves `status` unchanged, writes no
    `ExecutionAttempt`.
 5. No token value appears in any log line, API response, or `executionResult`.
+6. Running a workflow from any item executes it and every item transitively
+   reachable via `blocks`, in an order where each item's blocker has already
+   been attempted; it halts entirely at the first error `execute()` raises (a
+   gate rejection or a dispatch failure — both surface as an exception, never
+   as a 200 with a FAILED result), and unattempted items are left in their
+   prior status, unchanged.

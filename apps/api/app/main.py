@@ -30,6 +30,7 @@ from app.api.routes import (
     health,
     ingest,
     profile,
+    search,
     settings as settings_routes,
     speech,
     transcripts,
@@ -126,6 +127,7 @@ def create_app() -> FastAPI:
     app.include_router(credentials.router, prefix="/api/credentials", tags=["credentials"])
     app.include_router(audit.router, prefix="/api/audit-log", tags=["audit"])
     app.include_router(decisions.router, prefix="/api/decisions", tags=["decisions"])
+    app.include_router(search.router, prefix="/api/search", tags=["search"])
     app.include_router(profile.router, prefix="/api/profile", tags=["profile"])
     app.include_router(settings_routes.router, prefix="/api/settings", tags=["settings"])
     return app

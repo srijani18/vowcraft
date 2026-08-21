@@ -29,7 +29,17 @@ os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("INTEGRATIONS_MODE", "mock")
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
-from vowcraft_db import ActionItem, Base, Decision, Segment, Speaker, Transcript, TranscriptAsset, User  # noqa: E402
+from vowcraft_db import (  # noqa: E402
+    ActionItem,
+    Base,
+    Decision,
+    Segment,
+    SegmentEmbedding,
+    Speaker,
+    Transcript,
+    TranscriptAsset,
+    User,
+)
 
 from app.core.config import Settings  # noqa: E402
 from app.domain.types import (  # noqa: E402
@@ -221,6 +231,23 @@ def make_segment(db_session):
         row = Segment(
             transcript_id=transcript.id, start_ms=start_ms, end_ms=end_ms, text=text,
             speaker_id=speaker.id if speaker else None, **overrides,
+        )
+        db_session.add(row)
+        await db_session.flush()
+        return row
+
+    return _make
+
+
+@pytest.fixture
+def make_segment_embedding(db_session):
+    async def _make(
+        segment: Segment, *, embedding: Optional[list[float]] = None,
+        provider: str = "voyage", model: str = "voyage-3-lite", **overrides,
+    ) -> SegmentEmbedding:
+        row = SegmentEmbedding(
+            segment_id=segment.id, embedding=embedding or [0.0] * 512,
+            provider=provider, model=model, **overrides,
         )
         db_session.add(row)
         await db_session.flush()

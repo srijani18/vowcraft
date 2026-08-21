@@ -76,3 +76,28 @@ export function executeItem(
     body: JSON.stringify(body),
   })
 }
+
+/** The chain `runWorkflow` would attempt, and in what order — SPEC-002 §8. */
+export interface WorkflowPreview {
+  items: { id: string; description: string; status: string; actionType: string }[]
+}
+
+/** The response from `POST /api/action-items/{id}/run-workflow` — SPEC-002 §8. */
+export interface WorkflowOutcome {
+  startedId: string
+  ok: boolean
+  steps: { id: string; ok: boolean; replayed: boolean; status: string; result: ExecutionResultJson | null }[]
+  haltedAt: { id: string; statusCode: number; code: string; message: string } | null
+  skippedIds: string[]
+}
+
+export function getWorkflow(id: string): Promise<WorkflowPreview> {
+  return apiJson<WorkflowPreview>(`/api/action-items/${id}/workflow`)
+}
+
+export function runWorkflow(id: string, body: { confirmed?: boolean } = {}): Promise<WorkflowOutcome> {
+  return apiJson<WorkflowOutcome>(`/api/action-items/${id}/run-workflow`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
