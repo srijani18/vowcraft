@@ -402,11 +402,14 @@ export const CATALOG: readonly ServiceSpec[] = [
     module: 'EMBEDDING',
     blurb: 'Retrieval-tuned embeddings; the best free option for search quality.',
     tier: 'free',
-    costNote: 'Free tier: 200M tokens.',
+    // Voyage moved the free 200M-token allocation to the voyage-4 family and stopped
+    // offering it for older models (including voyage-3-lite, this catalog's original
+    // pick) — verified against Voyage's current pricing docs, not assumed.
+    costNote: 'Free tier: 200M tokens (voyage-4 family only).',
     fields: [API_KEY('pa-…')],
     envVar: 'VOYAGE_API_KEY',
     docsUrl: 'https://dash.voyageai.com',
-    models: ['voyage-3', 'voyage-3-lite'],
+    models: ['voyage-4', 'voyage-4-lite'],
   },
   {
     service: 'jina',

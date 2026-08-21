@@ -334,7 +334,6 @@ export function Overview({ data, userName }: { data: OverviewData; userName: str
                           )}
                         </p>
                         <p className="mt-1 text-xs leading-relaxed text-ink-muted">{module.blurb}</p>
-                        <p className="mono-num mt-1.5 text-ink-faint">{module.spec}</p>
                       </div>
                     </div>
                   </Link>

@@ -354,6 +354,7 @@ erDiagram
     Transcript ||--o{ Speaker : has
     Transcript ||--o{ ActionItem : yields
     Transcript ||--o{ Decision : records
+    Segment ||--o| SegmentEmbedding : "embedded for search — SPEC-021"
     ActionItem ||--o{ ExecutionAttempt : logs
     ActionItem ||--o{ ApprovalRequest : requires
     ActionItem ||--o{ Correction : teaches
@@ -401,7 +402,21 @@ erDiagram
         json content "the WHOLE document at this revision, not a diff"
         string changeSummary "what this turn changed, in the model's words"
     }
+    SegmentEmbedding {
+        string id PK
+        string segmentId FK UK "one embedding per segment"
+        vector embedding "512-dim, pgvector, HNSW + cosine — SPEC-021"
+        string provider "which embedding model wrote this row"
+    }
 ```
+
+`Transcript.sourceType` gained a fifth value, `TAB_CAPTURE` (SPEC-013) — a shared
+browser tab's audio, distinct from `MEET`/`TEAMS` (reserved for a possible future
+vendor-bot integration that was scoped and found infeasible for now — see §12's table)
+and from `MICROPHONE` (SPEC-014's mic-only dictation). `ActionItem`'s existing
+`dependsOn`/`blocks` self-reference — already in the diagram above, under "supersedes /
+parent / dependsOn" — is also what SPEC-002 §8's workflow orchestrator walks; no schema
+change was needed for it.
 
 Three decisions in the BRD pair are worth stating, because the obvious
 alternative is wrong in each case:
@@ -588,6 +603,19 @@ Vitest file was deleted. All of the above are worth knowing regardless of the mi
 own status, since none of them were migration artifacts so much as bugs the migration was
 the first thing to actually exercise.
 
+**Four features shipped on top of the completed migration**, each documented in its own
+spec and pointed to from §12's table: decisions & summary insights (SPEC-020, a reading
+surface for `Decision` data that had existed since SPEC-010 but never had a UI); the
+multi-step workflow orchestrator (SPEC-002 §8, walking `ActionItem.dependsOnId` — the
+schema's real ordering mechanism, not the separate `parentId`/`stepOrder` columns an
+earlier draft of that section assumed); semantic search (SPEC-021, pgvector + Voyage AI,
+which required the same "declare it twice" workaround SPEC-015 §3.1 describes for
+`alembic_version`, this time for a whole table Prisma's `db push` would otherwise drop);
+and live meeting capture (SPEC-013, browser tab-audio capture — the original bot-joins-
+the-call design was found infeasible for real customer meetings, since Google's Meet
+Media API is gated behind a developer-preview program requiring every participant
+enrolled, with no timeline to open up).
+
 ```mermaid
 graph LR
     subgraph local["Local — docker compose up"]
@@ -638,6 +666,10 @@ three-service topology is.
 | What renders the audit log? | [`src/app/dashboard/audit-log/page.tsx`](./src/app/dashboard/audit-log/page.tsx) — first paint via `apiServerJson`; [`AuditLogViewer.tsx`](./src/components/audit/AuditLogViewer.tsx) fetches via `apiFetch`, paginating on the response's `nextCursor` |
 | What renders the BYOK credentials page? | [`src/app/dashboard/settings/credentials/page.tsx`](./src/app/dashboard/settings/credentials/page.tsx) — first paint via `apiServerJson`; [`CredentialsManager.tsx`](./src/components/credentials/CredentialsManager.tsx) calls FastAPI via `apiFetch` for list/save/verify/delete, but still imports `MODULE_META`/`TIER_META` and the `CredentialView`/`ModuleAvailability` types directly from [`src/lib/credentials/`](./src/lib/credentials/) — those are pure presentation data with no DB access, so they never needed to move |
 | What renders the BRD documents list / detail page? | [`src/app/dashboard/brd/page.tsx`](./src/app/dashboard/brd/page.tsx) + [`[id]/page.tsx`](./src/app/dashboard/brd/[id]/page.tsx) — first paint via `apiServerJson`; [`VoiceRecorder.tsx`](./src/components/brd/VoiceRecorder.tsx)/[`RefineRecorder.tsx`](./src/components/brd/RefineRecorder.tsx) create/refine via `apiFetch`; export goes through [`BrdExportLink.tsx`](./src/components/brd/BrdExportLink.tsx), an authenticated blob fetch, not a plain `href`, the same cross-origin pattern as transcripts' audio/export |
+| What renders decisions & summaries? | [`src/app/dashboard/insights/page.tsx`](./src/app/dashboard/insights/page.tsx) + [`InsightsView.tsx`](./src/components/insights/InsightsView.tsx) — SPEC-020, a cross-transcript reading surface over `Decision` rows that already existed but had no UI of their own |
+| What renders semantic search? | [`src/app/dashboard/search/page.tsx`](./src/app/dashboard/search/page.tsx) + [`SearchView.tsx`](./src/components/search/SearchView.tsx) — SPEC-021; checks the `voyage` credential's own `configured` flag, not the EMBEDDING module's aggregate status (which always reports available because of an unimplemented catalog entry — see SPEC-021 §5) |
+| How does "run this and everything it blocks" work? | [`ActionItemCard.tsx`](./src/components/action-items/ActionItemCard.tsx)'s `blocksCount` affordance opens [`RunWorkflowModal.tsx`](./src/components/action-items/RunWorkflowModal.tsx) — SPEC-002 §8; no page of its own, it's a contextual action on the Action Items board |
+| How does live meeting capture work? | [`src/app/dashboard/transcripts/live/page.tsx`](./src/app/dashboard/transcripts/live/page.tsx) + [`LiveMeetingCapture.tsx`](./src/components/transcripts/LiveMeetingCapture.tsx)/[`useLiveMeetingCapture.ts`](./src/components/transcripts/useLiveMeetingCapture.ts) — SPEC-013; `getDisplayMedia` tab-audio capture over the same relay `VoiceRecorder.tsx` uses, landing on an ordinary `Transcript` row, not a bot joining any specific vendor's call (see SPEC-013 §1 for why) |
 | How is readiness / grouping decided (reference; the live path is FastAPI's mirror) | [`src/domain/action-item.ts`](./src/domain/action-item.ts) |
 | How is risk classified (reference) | [`src/domain/risk.ts`](./src/domain/risk.ts) |
 | Where do the business rules live (reference) | [`src/domain/rules/`](./src/domain/rules/) |
@@ -673,8 +705,12 @@ equivalent below:
 | Where does password change live? | [`apps/api/app/services/auth.py`](./apps/api/app/services/auth.py)'s `AuthService.change_password` — on the Auth surface, not Profile, because rotating the hash issues a fresh token pair the same way login does |
 | Where does the audit log query live? | [`apps/api/app/services/audit.py`](./apps/api/app/services/audit.py)'s `AuditService` — keyset (seek) pagination on `(at, id)`, not `OFFSET`, to match the frontend's cursor-based "load more" and stay stable under concurrent inserts |
 | Where does the BYOK credential vault live? | [`apps/api/app/services/credentials.py`](./apps/api/app/services/credentials.py) — the full 31-service catalogue (`CATALOG`), resolution order, and `verify`'s per-service recipe mechanism (bearer/header/query auth); `src/lib/credentials/catalog.ts` is still the source of truth for the *frontend's* presentation layer, so a new provider needs an entry in both |
-| Where is the streaming-ASR relay? | [`apps/api/app/api/routes/speech.py`](./apps/api/app/api/routes/speech.py) — the WebSocket the browser actually connects to |
-| Where are the DB models? | [`packages/db/vowcraft_db/models/`](./packages/db/vowcraft_db/models/) — mirrors the live Prisma schema exactly, see SPEC-015 §3 |
+| Where is the streaming-ASR relay? | [`apps/api/app/api/routes/speech.py`](./apps/api/app/api/routes/speech.py) — the WebSocket the browser actually connects to; reused unmodified by both mic dictation (SPEC-014) and live meeting capture (SPEC-013) |
+| Where do decisions get read? | [`apps/api/app/services/decisions.py`](./apps/api/app/services/decisions.py)'s `DecisionService` — SPEC-020; read-only, keyset-paginated the same way `audit.py` is |
+| Where does semantic search live? | [`apps/api/app/services/embeddings.py`](./apps/api/app/services/embeddings.py) (Voyage AI resolution + generation, via the same BYOK vault every other provider uses — not `CredentialService.resolve_module`) + [`search.py`](./apps/api/app/services/search.py) (cosine-ranked query against `SegmentEmbedding`, pgvector/HNSW); embedding itself is a best-effort stage in [`ingest/pipeline.py`](./apps/api/app/services/ingest/pipeline.py), right after extraction — SPEC-021 |
+| Where does the workflow orchestrator live? | [`apps/api/app/services/orchestrator.py`](./apps/api/app/services/orchestrator.py)'s `OrchestratorService` — composes `executor.py` rather than extending it, adding no gate logic of its own; walks `ActionItem.dependsOnId`/`blocks`, not the separate, unused `parentId`/`stepOrder` columns — SPEC-002 §8 |
+| Where does live meeting capture land? | [`apps/api/app/services/live_capture.py`](./apps/api/app/services/live_capture.py)'s `finalize_live_capture` — turns a browser's accumulated utterances into a `Transcript` + `Segment` rows via the same [`ingest/segments.py`](./apps/api/app/services/ingest/segments.py)`::persist_segments` the upload pipeline uses, then hands off to the same extraction/embedding stages, unmodified — SPEC-013 |
+| Where are the DB models? | [`packages/db/vowcraft_db/models/`](./packages/db/vowcraft_db/models/) — mirrors the live Prisma schema exactly, see SPEC-015 §3. `SegmentEmbedding` (SPEC-021) is the one exception worth knowing about: it's declared *twice*, once for real in Alembic and once as an inert `Unsupported()` shadow in `prisma/schema.prisma`, purely so Prisma's own `db push --accept-data-loss` (which runs on every `web` boot) doesn't drop a table it doesn't otherwise know about — see SPEC-021 §4 |
 | How does a Server Component call FastAPI? | [`src/lib/api-server.ts`](./src/lib/api-server.ts) + [`src/lib/api-token.ts`](./src/lib/api-token.ts) — mints its own bearer token server-side; SPEC-015 §4.1 |
 | How does the browser call FastAPI? | [`src/lib/api-client.ts`](./src/lib/api-client.ts) — the `sessionStorage` token pair, not a cookie |
 | Which surfaces are cut over vs. still dual-running? | SPEC-015 §7 |

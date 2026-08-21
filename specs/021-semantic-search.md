@@ -13,7 +13,8 @@ query against them by vector similarity.
 
 ## 2. Scope
 
-**In:** `Segment.text` only, embedded via Voyage AI (`voyage-3-lite`, 512 dimensions),
+**In:** `Segment.text` only, embedded via Voyage AI (`voyage-4-lite`, requested at 512
+dimensions),
 stored in a new `SegmentEmbedding` table (pgvector, HNSW index, cosine distance), queried
 through `GET /api/search` and reindexed on demand via `POST /api/search/reindex`. A
 minimal but real search page at `/dashboard/search`.
@@ -33,7 +34,7 @@ minimal but real search page at `/dashboard/search`.
   granularity; merging or splitting them for retrieval quality is a tuning pass, not a
   blocker for v1.
 
-## 3. Why pgvector, HNSW/cosine, Voyage `voyage-3-lite`
+## 3. Why pgvector, HNSW/cosine, Voyage `voyage-4-lite`
 
 **pgvector**, not a separate vector database: one fewer moving part, one fewer network
 hop, and the existing Postgres instance already holds everything a hit needs to be
@@ -47,11 +48,20 @@ starts empty and grows from zero. HNSW builds incrementally and needs no trainin
 HNSW index is built with `vector_cosine_ops` to match — the index and the query operator
 have to agree, or the index cannot be used at all.
 
-**`voyage-3-lite` / 512 dimensions**: the model already named in this app's own credential
-catalog (`apps/api/app/services/credentials.py`'s `voyage` `ServiceSpec`, `models=
-("voyage-3", "voyage-3-lite")`), and its free tier is the reason Voyage was chosen over
-requiring a paid provider outright. The column width is not a formality: changing models
-later means a new migration and a full re-embed, since dimensionality is fixed per column.
+**`voyage-4-lite`, requested at 512 dimensions, not the model's own 1024 default**: this
+spec originally named `voyage-3-lite` here. Corrected on 2026-08-21 after checking
+Voyage's current pricing docs directly rather than trusting what was true when this was
+first written: Voyage moved its free-tier allocation (the first 200M tokens) to the
+voyage-4 family and now explicitly excludes older models, `voyage-3-lite` included, from
+it — so the original choice would have shipped a "free" feature that was quietly no
+longer free. `voyage-4-lite` is the free, current equivalent, but its *default* output is
+1024-dimensional, not 512 — `embeddings.py`'s `embed()` passes Voyage's
+`output_dimension` request parameter explicitly (`provider.dimensions`, currently `512`)
+specifically so this switch needed no migration and no re-embed: the column width and the
+HNSW index are unchanged, only the model name and one request parameter are. The general
+point stands regardless of which specific model is current by the time anyone reads this:
+the column width is not a formality — changing *dimensionality* (not just the model name)
+means a new migration and a full re-embed, since it is fixed per column.
 
 ## 4. The Prisma/Alembic dual-write hazard, and why it matters here specifically
 

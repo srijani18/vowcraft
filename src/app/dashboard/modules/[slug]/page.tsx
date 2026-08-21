@@ -86,9 +86,6 @@ export default async function ModulePage({ params }: { params: Promise<{ slug: s
         </ul>
 
         <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-edge/20 pt-4">
-          <span className="mono-num rounded border border-edge/25 px-2 py-1 text-ink-faint">
-            {module.spec}
-          </span>
           <span className="text-[11px] text-ink-faint">
             {module.status === 'live'
               ? 'Implemented and covered by the smoke suite.'

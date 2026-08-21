@@ -162,7 +162,7 @@ class TestEmbedSegmentsInto:
         assert len(rows) == 3
         for row in rows:
             assert row.provider == "voyage"
-            assert row.model == "voyage-3-lite"
+            assert row.model == "voyage-4-lite"
             # Proves the vector actually round-tripped through asyncpg's codec, not just
             # that a Python list was held in memory.
             assert len(row.embedding) == 512

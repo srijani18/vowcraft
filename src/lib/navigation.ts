@@ -278,9 +278,14 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       {
         slug: 'workflows',
         label: 'Multi-step workflows',
-        href: '/dashboard/modules/workflows',
+        // Not its own page — a contextual action on the Action Items board (a "blocks N
+        // others → run workflow" affordance on the blocking item's card). The query string
+        // exists only so this href is distinct from the `action-items` module's own
+        // (`/dashboard/action-items`) — see navigation.test.ts's "no two modules share an
+        // href" check, which exists for exactly this reason.
+        href: '/dashboard/action-items?workflows=1',
         icon: 'bi-diagram-2',
-        status: 'planned',
+        status: 'live',
         blurb: 'An item that blocks others can run itself and everything downstream in one go.',
         detail:
           'Shipped as a contextual action on the Action Items board, not a page of its own: any ' +

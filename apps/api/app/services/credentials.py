@@ -309,10 +309,15 @@ CATALOG: tuple[ServiceSpec, ...] = (
     ServiceSpec(
         "voyage", "Voyage AI", "EMBEDDING",
         "Retrieval-tuned embeddings; the best free option for search quality.", "free",
-        "Free tier: 200M tokens.",
+        # The first 200M tokens are free, but — checked directly against Voyage's current
+        # pricing docs on 2026-08-21, not assumed — only for the voyage-4 family; the
+        # voyage-3 models this catalog originally listed are "older models" Voyage
+        # explicitly excludes from the free tier now. `embeddings.py`'s PROVIDERS tuple
+        # already calls voyage-4-lite for exactly this reason.
+        "Free tier: 200M tokens (voyage-4 family only).",
         fields=(_api_key("pa-…"),), env_var="VOYAGE_API_KEY",
         docs_url="https://dash.voyageai.com",
-        models=("voyage-3", "voyage-3-lite"),
+        models=("voyage-4", "voyage-4-lite"),
     ),
     ServiceSpec(
         "jina", "Jina AI", "EMBEDDING",

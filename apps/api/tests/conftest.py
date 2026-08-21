@@ -243,7 +243,7 @@ def make_segment(db_session):
 def make_segment_embedding(db_session):
     async def _make(
         segment: Segment, *, embedding: Optional[list[float]] = None,
-        provider: str = "voyage", model: str = "voyage-3-lite", **overrides,
+        provider: str = "voyage", model: str = "voyage-4-lite", **overrides,
     ) -> SegmentEmbedding:
         row = SegmentEmbedding(
             segment_id=segment.id, embedding=embedding or [0.0] * 512,

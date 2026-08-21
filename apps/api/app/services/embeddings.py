@@ -46,9 +46,18 @@ class EmbeddingProvider:
 #: One entry today, deliberately — see the module docstring. Shaped as a tuple so adding a
 #: second provider later (Jina, local BGE) is additive, matching transcription.py's own
 #: multi-provider fallback shape, without generalising anything not yet needed.
+#:
+#: `voyage-4-lite`, not `voyage-3-lite`: Voyage moved its free-tier allocation (the first
+#: 200M tokens) to the voyage-4 family and stopped offering it for older models, including
+#: 3-lite, at some point after this integration was first written — checked directly
+#: against Voyage's current docs on 2026-08-21, not assumed. `voyage-4-lite` defaults to
+#: 1024-dimensional output, but supports an explicit `output_dimension` request parameter
+#: (256/512/1024/2048) — `embed()` passes `dimensions` through as exactly that parameter,
+#: which is what keeps this on 512 dimensions and the existing `SegmentEmbedding` column
+#: and HNSW index correct with no migration, despite the newer model's different default.
 PROVIDERS: tuple[EmbeddingProvider, ...] = (
     EmbeddingProvider(
-        "voyage", "Voyage AI", "https://api.voyageai.com/v1", "voyage-3-lite", 512, "voyage",
+        "voyage", "Voyage AI", "https://api.voyageai.com/v1", "voyage-4-lite", 512, "voyage",
     ),
 )
 
@@ -102,7 +111,13 @@ async def embed(
                 response = await client.post(
                     f"{provider.base_url}/embeddings",
                     headers={"authorization": f"Bearer {api_key}"},
-                    json={"input": batch, "model": provider.model, "input_type": input_type},
+                    json={
+                        "input": batch, "model": provider.model, "input_type": input_type,
+                        # voyage-4-lite defaults to 1024 dimensions; without this the
+                        # response would silently stop matching the fixed-width
+                        # `SegmentEmbedding.embedding` column and its HNSW index.
+                        "output_dimension": provider.dimensions,
+                    },
                 )
         except httpx.TimeoutException as exc:
             raise EmbeddingError(
