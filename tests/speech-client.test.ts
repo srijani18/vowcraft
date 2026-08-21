@@ -72,3 +72,41 @@ describe('accumulation — interim frames replace, finals commit', () => {
     assert.equal(acc.finalText, 'spaced out again')
   })
 })
+
+describe('utterances — SPEC-013\'s per-utterance timestamps', () => {
+  test('a final frame with atMs is recorded as an utterance', () => {
+    const acc = new TranscriptAccumulator()
+    acc.add({ text: 'first thing said', final: true }, 1000)
+    assert.deepEqual(acc.utterances, [{ text: 'first thing said', atMs: 1000 }])
+  })
+
+  test('an interim frame never appears in utterances even with atMs passed', () => {
+    const acc = new TranscriptAccumulator()
+    acc.add({ text: 'still speaking', final: false }, 500)
+    assert.deepEqual(acc.utterances, [])
+  })
+
+  test('a final frame with no atMs is committed but not added as an utterance', () => {
+    const acc = new TranscriptAccumulator()
+    acc.add({ text: 'no timestamp', final: true })
+    assert.equal(acc.finalText, 'no timestamp')
+    assert.deepEqual(acc.utterances, [])
+  })
+
+  test('successive utterances keep their own timestamps in order', () => {
+    const acc = new TranscriptAccumulator()
+    acc.add({ text: 'first', final: true }, 1000)
+    acc.add({ text: 'second', final: true }, 2500)
+    assert.deepEqual(acc.utterances, [
+      { text: 'first', atMs: 1000 },
+      { text: 'second', atMs: 2500 },
+    ])
+  })
+
+  test('reset clears utterances too', () => {
+    const acc = new TranscriptAccumulator()
+    acc.add({ text: 'first session', final: true }, 1000)
+    acc.reset()
+    assert.deepEqual(acc.utterances, [])
+  })
+})

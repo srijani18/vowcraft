@@ -15,15 +15,16 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from vowcraft_db import Segment, Speaker, Transcript, TranscriptAsset, Word
+from vowcraft_db import Transcript, TranscriptAsset
 
 from app.core.config import get_settings
 from app.core.logging import logger
 from app.db.session import session_factory
 from app.services.credentials import CredentialService
 from app.services.ingest.audio import extract_audio
+from app.services.ingest.segments import persist_segments
 from app.services.ingest.validate import MAX_AUDIO_BYTES
 from app.services.transcription import TranscriptionError, resolve_transcriber, sample_transcribe, transcribe
 
@@ -54,6 +55,28 @@ def start_processing(transcript_id: str, user_id: str, request_id: str) -> None:
     task = asyncio.create_task(_run_guarded(transcript_id, user_id, request_id))
     _LIVE_TASKS.add(task)
     task.add_done_callback(_LIVE_TASKS.discard)
+
+
+def start_extraction_and_embedding(transcript_id: str, user_id: str, request_id: str) -> None:
+    """Fires stages 2-3 alone, without awaiting them — for a transcript whose segments
+    already exist by some path other than the upload pipeline (live capture, SPEC-013),
+    so it must not re-run stage 1's transcription against a `TranscriptAsset` that was
+    never created. Same live-task-tracking reasoning as `start_processing`."""
+    task = asyncio.create_task(_run_extraction_and_embedding_guarded(transcript_id, user_id, request_id))
+    _LIVE_TASKS.add(task)
+    task.add_done_callback(_LIVE_TASKS.discard)
+
+
+async def _run_extraction_and_embedding_guarded(transcript_id: str, user_id: str, request_id: str) -> None:
+    try:
+        await run_extraction_and_embedding(transcript_id, user_id, request_id)
+    except Exception as exc:  # noqa: BLE001 — this is the backstop; nothing above it catches
+        logger.error("pipeline.unhandled", transcriptId=transcript_id, err=exc)
+        async with session_factory()() as session:
+            try:
+                await _mark(session, transcript_id, status="FAILED", stage="done", progress=100)
+            except Exception:  # noqa: BLE001 — a failure to record the failure is not fatal
+                pass
 
 
 _LIVE_TASKS: set[asyncio.Task] = set()
@@ -164,33 +187,7 @@ async def run_pipeline(transcript_id: str, user_id: str, request_id: str) -> Non
             return
 
         # ── persist before attempting extraction — see the module docstring
-        await session.execute(delete(Segment).where(Segment.transcript_id == transcript_id))
-        await session.execute(delete(Speaker).where(Speaker.transcript_id == transcript_id))
-        await session.flush()
-
-        speaker_ids: dict[str, str] = {}
-        labels = {s["speakerLabel"] for s in segments if s.get("speakerLabel")}
-        for label in labels:
-            speaker = Speaker(transcript_id=transcript_id, label=label)
-            session.add(speaker)
-            await session.flush()
-            speaker_ids[label] = speaker.id
-
-        for segment in segments:
-            row = Segment(
-                transcript_id=transcript_id,
-                speaker_id=speaker_ids.get(segment.get("speakerLabel")),
-                start_ms=segment["startMs"], end_ms=segment["endMs"], text=segment["text"],
-            )
-            session.add(row)
-            await session.flush()
-            for word in segment.get("words", []):
-                session.add(
-                    Word(
-                        segment_id=row.id, text=word["text"], start_ms=word["startMs"],
-                        end_ms=word["endMs"], confidence=word.get("confidence"),
-                    )
-                )
+        await persist_segments(session, transcript_id, segments)
 
         transcript.language = language
         transcript.duration_ms = duration_ms
@@ -207,13 +204,27 @@ async def run_pipeline(transcript_id: str, user_id: str, request_id: str) -> Non
             segments=len(segments), diarized=diarized,
         )
 
+    await run_extraction_and_embedding(transcript_id, user_id, request_id)
+
+
+async def run_extraction_and_embedding(transcript_id: str, user_id: str, request_id: str) -> dict[str, Any]:
+    """Stages 2 and 3: extract action items, then embed for semantic search — shared by
+    the upload pipeline and live capture (SPEC-013), so both land on the exact same
+    post-transcription behaviour rather than a second, divergent implementation.
+
+    Both stages are best-effort: a transcript with no extraction or embedding provider
+    configured still finishes `READY`, matching how `run_pipeline` has always treated
+    extraction failures as non-fatal to the transcript itself.
+    """
+    log = logger.child(requestId=request_id, transcriptId=transcript_id, userId=user_id)
+    settings = get_settings()
+
     # ── stage 2: extract, via the existing BRD/extraction LLM layer
     from app.services.extraction import extract_into
 
     outcome = await extract_into(transcript_id, user_id, request_id)
 
-    # ── stage 3: embed, for semantic search (SPEC-021) — best-effort, same as extraction:
-    # a transcript with no embedding provider configured still finishes as READY.
+    # ── stage 3: embed, for semantic search (SPEC-021)
     from app.services.embeddings import embed_segments_into
 
     try:
@@ -235,3 +246,4 @@ async def run_pipeline(transcript_id: str, user_id: str, request_id: str) -> Non
         "pipeline.done", extracted=outcome.get("created", 0), extractionOk=outcome.get("ok"),
         embedded=embed_outcome.get("embedded", 0), embeddingOk=embed_outcome.get("ok"),
     )
+    return {"extraction": outcome, "embedding": embed_outcome}

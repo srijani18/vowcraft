@@ -12,6 +12,8 @@
 export interface TranscriptSummary {
   id: string
   title: string
+  /** "UPLOAD" | "MICROPHONE" | "URL" | "TEAMS" | "MEET" | "TAB_CAPTURE" — SPEC-013. */
+  sourceType: string
   status: string
   stage: string
   progress: number

@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, Response, UploadFile, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from vowcraft_db import Transcript, TranscriptAsset, now_ms
 
@@ -19,8 +20,50 @@ from app.db.repositories.users import AuditRepository
 from app.services.extraction import extract_into
 from app.services.ingest.pipeline import start_processing
 from app.services.ingest.validate import title_from_filename, validate_upload
+from app.services.live_capture import finalize_live_capture
 
 router = APIRouter()
+
+
+class LiveUtterance(BaseModel):
+    text: str = Field(min_length=1, max_length=5_000)
+    atMs: int = Field(ge=0)
+
+
+class LiveCaptureBody(BaseModel):
+    """SPEC-013. `utterances` are the browser's *final* transcript frames only — interim
+    ones are display-only and never sent here."""
+
+    title: Optional[str] = Field(default=None, max_length=200)
+    utterances: list[LiveUtterance] = Field(min_length=1, max_length=2_000)
+    durationMs: int = Field(ge=0)
+    provider: Optional[str] = Field(default=None, max_length=100)
+
+
+@router.post("/live", status_code=status.HTTP_202_ACCEPTED)
+async def live_capture(
+    user: CurrentUser, session: SessionDep, request_id: RequestIdDep, body: LiveCaptureBody,
+) -> dict:
+    """Finalizes a browser tab-audio capture into an ordinary transcript — SPEC-013.
+
+    The capture itself already happened over the existing streaming relay
+    (`/api/speech/stream`); this is the equivalent of an upload finishing — turn what was
+    captured into a real `Transcript` and hand off to the same extraction/embedding
+    stages every other transcript goes through.
+    """
+    transcript = await finalize_live_capture(
+        session, user.id, request_id,
+        title=body.title, utterances=[u.model_dump() for u in body.utterances],
+        duration_ms=body.durationMs, provider=body.provider,
+    )
+    return {
+        "ok": True,
+        "transcript": {
+            "id": transcript.id, "title": transcript.title,
+            "status": "PROCESSING", "stage": "extracting",
+        },
+        "message": "Captured. Extracting action items now; this page will update as it progresses.",
+    }
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED)

@@ -26,10 +26,20 @@ export interface SpeechFrame {
 export class TranscriptAccumulator {
   private committed: string[] = []
   private interim = ''
+  private _utterances: { text: string; atMs: number }[] = []
 
-  add(frame: SpeechFrame): void {
+  /**
+   * `atMs` is optional and additive — the voice-to-BRD flow (SPEC-014) never passes it and
+   * only ever reads `finalText`/`displayText`; live meeting capture (SPEC-013) passes it to
+   * build `utterances`, since a `Transcript`'s segments need an approximate timestamp per
+   * utterance and the live relay's frames carry none of their own (SPEC-014 §3's
+   * `Utterance` has no timing at all — only `text`/`isFinal`).
+   */
+  add(frame: SpeechFrame, atMs?: number): void {
     if (frame.final) {
-      this.committed.push(frame.text.trim())
+      const text = frame.text.trim()
+      this.committed.push(text)
+      if (atMs !== undefined && text) this._utterances.push({ text, atMs })
       this.interim = ''
     } else {
       this.interim = frame.text.trim()
@@ -46,6 +56,12 @@ export class TranscriptAccumulator {
     return [this.finalText, this.interim].filter(Boolean).join(' ').trim()
   }
 
+  /** Each finalised utterance with the timestamp it arrived at — only populated when
+   * `add()` was called with `atMs`. Interim frames never appear here. */
+  get utterances(): { text: string; atMs: number }[] {
+    return this._utterances
+  }
+
   get isEmpty(): boolean {
     return this.committed.length === 0 && !this.interim
   }
@@ -53,5 +69,17 @@ export class TranscriptAccumulator {
   reset(): void {
     this.committed = []
     this.interim = ''
+    this._utterances = []
   }
+}
+
+/** What MediaRecorder should produce. Opus in WebM where available; the backend copes.
+ * Shared by SPEC-014's mic dictation and SPEC-013's tab capture — identical requirement,
+ * one implementation. */
+export function pickMimeType(): string | null {
+  if (typeof MediaRecorder === 'undefined') return null
+  for (const candidate of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']) {
+    if (MediaRecorder.isTypeSupported(candidate)) return candidate
+  }
+  return null
 }

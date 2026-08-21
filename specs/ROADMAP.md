@@ -14,7 +14,7 @@ contracts the earlier phases will write into.**
 | 1.5 | Word-level timestamps | SPEC-010 §6 | **implemented** |
 | 1.6 | Progress indicator | SPEC-010 §5 | **implemented** (stage + % on the row, polled) |
 | 1.7 | Play audio, highlight current word | SPEC-012 | range-request streaming built; player surface planned |
-| 1.8 | Live Teams / Meet capture | SPEC-013 | planned |
+| 1.8 | Live meeting capture, via browser tab audio (vendor-agnostic) | SPEC-013 | **implemented** — Google's Meet bot API is developer-preview-gated with no timeline; tab capture is the buildable substitute |
 | 1.9 | Streaming ASR, provider-agnostic (Deepgram + self-hosted) | SPEC-014 §3 | **implemented** |
 | 1.10 | Voice → BRD: live dictation to a structured document | SPEC-014 §5 | **implemented** |
 | 1.11 | Incremental refinement — speak again to amend, ids stable | SPEC-014 §6 | **implemented** |

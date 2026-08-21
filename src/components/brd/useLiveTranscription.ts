@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { TranscriptAccumulator } from '@/lib/speech-client'
+import { TranscriptAccumulator, pickMimeType } from '@/lib/speech-client'
 import { speechSocket } from '@/lib/api-client'
 
 /**
@@ -37,15 +37,6 @@ export interface LiveTranscription {
   provider: string | null
   start: () => Promise<void>
   stop: () => Promise<string>
-}
-
-/** What MediaRecorder should produce. Opus in WebM where available; the backend copes. */
-function pickMimeType(): string | null {
-  if (typeof MediaRecorder === 'undefined') return null
-  for (const candidate of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']) {
-    if (MediaRecorder.isTypeSupported(candidate)) return candidate
-  }
-  return null
 }
 
 export function useLiveTranscription(): LiveTranscription {

@@ -28,6 +28,14 @@ export default async function TranscriptsPage() {
 
       <Uploader initialStatus={status} />
 
+      <Link
+        href="/dashboard/transcripts/live"
+        className="flex items-center gap-2 text-sm text-ink-muted underline decoration-dotted hover:text-ink"
+      >
+        <i className="bi bi-camera-video" aria-hidden />
+        Or capture a live meeting by sharing a browser tab
+      </Link>
+
       <section aria-labelledby="library">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 id="library" className="text-sm font-semibold uppercase tracking-wide text-ink-muted">

@@ -24,6 +24,12 @@ class TranscriptSource(str, enum.Enum):
     URL = "URL"
     TEAMS = "TEAMS"
     MEET = "MEET"
+    # A shared browser tab's audio, captured via getDisplayMedia — SPEC-013. Deliberately
+    # not MEET/TEAMS: those stay reserved for a possible future vendor-bot integration, and
+    # reusing either here would misrepresent a Zoom (or any other) tab capture as Google's
+    # or Microsoft's own. Not MICROPHONE either — that's mic-only capture (SPEC-014),
+    # semantically distinct from a shared tab's mixed system audio.
+    TAB_CAPTURE = "TAB_CAPTURE"
 
 
 class TranscriptStatus(str, enum.Enum):

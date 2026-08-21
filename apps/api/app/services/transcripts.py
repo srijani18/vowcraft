@@ -47,6 +47,7 @@ class TranscriptService:
         return {
             "id": row.id,
             "title": row.title,
+            "sourceType": _enum(row.source_type),
             "status": _enum(row.status),
             "stage": row.stage,
             "progress": row.progress,

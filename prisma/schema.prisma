@@ -516,6 +516,8 @@ enum TranscriptSource {
   URL
   TEAMS
   MEET
+  /// A shared browser tab's audio, captured via getDisplayMedia — SPEC-013.
+  TAB_CAPTURE
 }
 
 enum TranscriptStatus {

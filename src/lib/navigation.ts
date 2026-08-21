@@ -151,19 +151,22 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       {
         slug: 'live-meetings',
         label: 'Live meetings',
-        href: '/dashboard/modules/live-meetings',
+        href: '/dashboard/transcripts/live',
         icon: 'bi-camera-video',
-        status: 'planned',
-        blurb: 'Join a Teams or Meet call and transcribe in the background.',
+        status: 'live',
+        blurb: 'Share a browser tab with meeting audio and get a transcript as it ends.',
         detail:
-          'Streaming ASR over WebSocket with voice activity detection, so silence costs nothing ' +
-          'and the transcript lands as the call ends.',
+          'Works with any meeting tool running in a browser tab — Meet, Teams, Zoom or otherwise ' +
+          '— because it captures the tab’s own audio via the browser’s share-tab control rather ' +
+          'than joining the call as a bot (Google’s own bot API is gated behind a developer-preview ' +
+          'program requiring every participant enrolled, with no timeline to open up). Streams over ' +
+          'the same relay live dictation already uses, and lands as an ordinary recording once you stop.',
         spec: 'SPEC-013',
         highlights: [
-          'Microsoft Teams and Google Meet capture',
-          'Streaming transcription with low latency',
-          'Voice activity detection — no manual start/stop',
-          'Action items extracted as soon as the call finishes',
+          'Vendor-agnostic: any meeting tool open in a shared browser tab, not just Meet or Teams',
+          'Streaming transcription over the existing live-transcription relay',
+          'Manual start (share the tab) and stop (native "Stop sharing", or a button here)',
+          'Lands as a normal recording — segments, and action items once extraction runs',
         ],
       },
     ],
