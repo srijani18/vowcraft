@@ -378,3 +378,44 @@ export function findModule(slug: string): { module: NavModule; group: NavGroup }
 export function groupFor(slug: string): NavGroup | null {
   return findModule(slug)?.group ?? null
 }
+
+/**
+ * Whether `module` should render as the sidebar's active entry for `pathname` (plus
+ * `search`, the current `?query=string` with or without its leading `?`) — SPEC-005 §2.
+ * Pure and dependency-free on purpose (moved out of `Sidebar.tsx`, a `'use client'`
+ * component, specifically so this is unit-testable without a DOM): a shared URL between
+ * modules has bitten this three times now — first a shared *prefix* (Recordings vs.
+ * Transcript reader, then Live meetings falling into the reader's catch-all), then a
+ * shared *pathname distinguished only by query string* (Multi-step workflows, which
+ * lives at `/dashboard/action-items?workflows=1` since it has no page of its own —
+ * `usePathname()` strips query strings entirely, so comparing pathname alone meant
+ * Action Items lit up and Workflows never could, regardless of which link was actually
+ * followed).
+ */
+export function isActive(module: NavModule, pathname: string, search: string = ''): boolean {
+  const params = new URLSearchParams(search)
+  if (module.href === '/dashboard') return pathname === '/dashboard'
+  // `/dashboard/settings` would otherwise light up for every settings subpage.
+  if (module.href === '/dashboard/settings') return pathname === '/dashboard/settings'
+  // Recordings (the list), Transcript reader (a specific transcript, or its own landing
+  // page), and Live meetings all share the `/dashboard/transcripts` prefix but are three
+  // different destinations. Recordings claims only the bare list; Live meetings claims
+  // its own subtree; everything else under the prefix belongs to the reader — which is
+  // why, without carving both exceptions out explicitly, a third module added under this
+  // prefix (Live meetings) fell into the reader's catch-all and both lit up together.
+  if (module.slug === 'upload' && module.href === '/dashboard/transcripts') {
+    return pathname === '/dashboard/transcripts'
+  }
+  if (module.slug === 'live-meetings') return pathname.startsWith('/dashboard/transcripts/live')
+  if (module.slug === 'transcripts') {
+    return pathname.startsWith('/dashboard/transcripts/') && !pathname.startsWith('/dashboard/transcripts/live')
+  }
+  // Multi-step workflows and Action items share a pathname; only the `workflows` query
+  // param (present only when Workflows' own link was followed) tells them apart. Action
+  // items must NOT also light up when it's present, or both light up together again.
+  if (module.slug === 'workflows') return pathname === '/dashboard/action-items' && params.has('workflows')
+  if (module.slug === 'action-items') {
+    return pathname === '/dashboard/action-items' && !params.has('workflows')
+  }
+  return pathname === module.href || pathname.startsWith(`${module.href}/`)
+}

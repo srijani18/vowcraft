@@ -2,9 +2,9 @@
 
 import clsx from 'clsx'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { NAV_GROUPS, type NavGroup, type NavModule } from '@/lib/navigation'
+import { NAV_GROUPS, isActive, type NavGroup } from '@/lib/navigation'
 import { ThemeToggle } from './ThemeToggle'
 import { clearTokens } from '@/lib/api-client'
 
@@ -29,6 +29,7 @@ export function Sidebar({
   userEmail: string
 }) {
   const pathname = usePathname()
+  const search = useSearchParams().toString()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
@@ -53,7 +54,7 @@ export function Sidebar({
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const activeGroup = NAV_GROUPS.find((g) => g.modules.some((m) => isActive(m, pathname)))
+  const activeGroup = NAV_GROUPS.find((g) => g.modules.some((m) => isActive(m, pathname, search)))
 
   const isGroupOpen = (group: NavGroup) =>
     collapsed[group.id] === undefined ? group.id === activeGroup?.id || group.id === 'overview' : !collapsed[group.id]
@@ -84,7 +85,7 @@ export function Sidebar({
             {open && (
               <ul id={`nav-group-${group.id}`} className="mt-0.5 space-y-0.5 pl-1">
                 {group.modules.map((module) => {
-                  const active = isActive(module, pathname)
+                  const active = isActive(module, pathname, search)
                   return (
                     <li key={module.slug}>
                       <Link
@@ -177,21 +178,6 @@ export function Sidebar({
       </aside>
     </>
   )
-}
-
-function isActive(module: NavModule, pathname: string): boolean {
-  if (module.href === '/dashboard') return pathname === '/dashboard'
-  // `/dashboard/settings` would otherwise light up for every settings subpage.
-  if (module.href === '/dashboard/settings') return pathname === '/dashboard/settings'
-  // Recordings (the list) and Transcript reader (a specific transcript, or its own
-  // landing page) share the `/dashboard/transcripts` prefix but are different
-  // destinations. Recordings claims only the bare list; everything under it belongs
-  // to the reader, which is why both used to light up together.
-  if (module.slug === 'upload' && module.href === '/dashboard/transcripts') {
-    return pathname === '/dashboard/transcripts'
-  }
-  if (module.slug === 'transcripts') return pathname.startsWith('/dashboard/transcripts/')
-  return pathname === module.href || pathname.startsWith(`${module.href}/`)
 }
 
 function Brand() {

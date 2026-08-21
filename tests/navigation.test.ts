@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { ALL_MODULES, findModule, groupFor, NAV_GROUPS } from '@/lib/navigation'
+import { ALL_MODULES, findModule, groupFor, isActive, NAV_GROUPS } from '@/lib/navigation'
 
 /**
  * The registry feeds the sidebar, the mobile drawer, and the dashboard explorer at
@@ -110,5 +110,74 @@ describe('module registry — SPEC-005 §2', () => {
   test('the settings group is reachable and last, so navigation reads top-down', () => {
     assert.equal(NAV_GROUPS[NAV_GROUPS.length - 1]!.id, 'settings')
     assert.equal(NAV_GROUPS[0]!.id, 'overview')
+  })
+})
+
+/**
+ * Three modules — Recordings, Transcript reader, Live meetings — share the
+ * `/dashboard/transcripts` prefix, which has caused exactly this "two lit up at once"
+ * bug twice: once between Recordings and the reader, and again when Live meetings was
+ * added and fell into the reader's catch-all. Each case below pins one destination
+ * lighting up and the others explicitly not.
+ */
+describe('isActive — the shared /dashboard/transcripts prefix (SPEC-005 §2, SPEC-012 §2.1)', () => {
+  const recordings = findModule('upload')!.module
+  const reader = findModule('transcripts')!.module
+  const live = findModule('live-meetings')!.module
+
+  test('the bare list is Recordings only', () => {
+    assert.equal(isActive(recordings, '/dashboard/transcripts'), true)
+    assert.equal(isActive(reader, '/dashboard/transcripts'), false)
+    assert.equal(isActive(live, '/dashboard/transcripts'), false)
+  })
+
+  test('a specific transcript is the reader only', () => {
+    assert.equal(isActive(reader, '/dashboard/transcripts/abc123'), true)
+    assert.equal(isActive(recordings, '/dashboard/transcripts/abc123'), false)
+    assert.equal(isActive(live, '/dashboard/transcripts/abc123'), false)
+  })
+
+  test('the reader\'s own landing page is the reader only', () => {
+    assert.equal(isActive(reader, '/dashboard/transcripts/reader'), true)
+    assert.equal(isActive(live, '/dashboard/transcripts/reader'), false)
+  })
+
+  test('live capture is Live meetings only — the exact regression this pins', () => {
+    assert.equal(isActive(live, '/dashboard/transcripts/live'), true)
+    assert.equal(isActive(reader, '/dashboard/transcripts/live'), false)
+    assert.equal(isActive(recordings, '/dashboard/transcripts/live'), false)
+  })
+})
+
+/**
+ * Multi-step workflows has no page of its own — it lives at
+ * `/dashboard/action-items?workflows=1`, distinguished from Action items by query string
+ * alone. `usePathname()` strips query strings entirely, so comparing pathname alone
+ * (what an earlier version of `isActive` did) meant Action items always lit up instead,
+ * regardless of which link was actually followed — `isActive` must be given the search
+ * string too, not just the pathname.
+ */
+describe('isActive — a pathname shared via query string (SPEC-002 §8)', () => {
+  const actionItems = findModule('action-items')!.module
+  const workflows = findModule('workflows')!.module
+
+  test('the bare action-items path is Action items only', () => {
+    assert.equal(isActive(actionItems, '/dashboard/action-items', ''), true)
+    assert.equal(isActive(workflows, '/dashboard/action-items', ''), false)
+  })
+
+  test('?workflows=1 is Multi-step workflows only — the exact regression this pins', () => {
+    assert.equal(isActive(workflows, '/dashboard/action-items', 'workflows=1'), true)
+    assert.equal(isActive(actionItems, '/dashboard/action-items', 'workflows=1'), false)
+  })
+
+  test('an unrelated filter query string still lights up Action items, not Workflows', () => {
+    assert.equal(isActive(actionItems, '/dashboard/action-items', 'status=APPROVED'), true)
+    assert.equal(isActive(workflows, '/dashboard/action-items', 'status=APPROVED'), false)
+  })
+
+  test('search defaults to empty when the caller passes none', () => {
+    assert.equal(isActive(actionItems, '/dashboard/action-items'), true)
+    assert.equal(isActive(workflows, '/dashboard/action-items'), false)
   })
 })
