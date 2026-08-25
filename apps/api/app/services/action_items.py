@@ -29,7 +29,7 @@ from vowcraft_db import (
 )
 
 from app.core.config import Settings
-from app.core.exceptions import bad_request, not_found, unprocessable
+from app.core.exceptions import bad_request, conflict, not_found, unprocessable
 from app.domain.action_item import (
     AUDIT_EVENT_FOR_STATUS,
     GROUP_ORDER,
@@ -50,7 +50,7 @@ from app.domain.types import (
     SettingsView,
     TeamMemberView,
 )
-from app.integrations.registry import resolve_provider
+from app.integrations.registry import planned_provider_for, resolve_provider
 from app.db.repositories.users import AuditRepository
 
 
@@ -162,6 +162,11 @@ def _blocked_reason(
     if blocking:
         return blocking[0].message
     if not has_provider:
+        gated = planned_provider_for(core.action_type)
+        if gated is not None:
+            # Distinguished deliberately: nothing here is the reviewer's to fix, so
+            # pointing them at Settings would be a wild goose chase.
+            return f"{gated.display_name} support is coming soon, so this cannot run yet."
         return f"No integration is configured to handle a {core.action_type} action."
     return None
 
@@ -449,6 +454,53 @@ class ActionItemService:
             raise not_found("That action item does not exist.")
         inputs = await self.load_inputs(user_id, user_email)
         return to_dto(row, inputs, datetime.now(timezone.utc))
+
+    async def delete_item(self, user_id: str, item_id: str, request_id: str) -> dict[str, Any]:
+        """Removes one action item.
+
+        Two things are deliberately *not* refused. An EXECUTED item can be deleted: the
+        thing it did in the world already happened, and its audit rows survive the deletion
+        (`AuditLog.actionItemId` is SET NULL — see the model docstring), so removing the
+        board entry destroys no record. And an item other items depend on can be deleted:
+        `dependsOnId` and `supersededById` are both SET NULL, so the chain loosens rather
+        than cascading into a multi-item deletion nobody asked for.
+
+        What *is* refused is deleting mid-flight. An EXECUTING row has a dispatch in
+        progress against a third party, and deleting it would leave the result with nowhere
+        to be recorded.
+        """
+        row = await self.session.scalar(
+            select(ActionItem)
+            .join(Transcript, Transcript.id == ActionItem.transcript_id)
+            .where(ActionItem.id == item_id, Transcript.user_id == user_id)
+        )
+        if row is None:
+            # 404 rather than 403, for the same reason as `get_item`.
+            raise not_found("That action item does not exist.")
+
+        status = row.status.value if hasattr(row.status, "value") else str(row.status)
+        if status == "EXECUTING":
+            raise conflict(
+                "execution_in_progress",
+                "This action is being executed right now. Wait for it to finish, then delete it.",
+            )
+
+        # Recorded before the delete, and with the description inline: once the row is gone
+        # the audit entry is the only place this item is described at all.
+        await AuditRepository(self.session).record(
+            event="action_item.deleted", actor_id=user_id, action_item_id=item_id,
+            request_id=request_id,
+            before={
+                "description": row.description,
+                "actionType": row.action_type.value
+                if hasattr(row.action_type, "value")
+                else str(row.action_type),
+                "status": status,
+            },
+            metadata={"actionItemId": item_id, "transcriptId": row.transcript_id},
+        )
+        await self.session.delete(row)
+        return {"ok": True}
 
     async def patch_item(
         self,

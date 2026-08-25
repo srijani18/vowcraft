@@ -148,6 +148,22 @@ async def patch_item(
     return result
 
 
+@router.delete("/{item_id}")
+async def delete_item(
+    item_id: str,
+    user: CurrentUser,
+    session: SessionDep,
+    settings: SettingsDep,
+    request_id: RequestIdDep,
+) -> dict:
+    result = await _service(session, settings).delete_item(user.id, item_id, request_id)
+    # Same single commit as the patch above: the deletion and the audit row recording it
+    # land together. An item that vanished with no trace of who removed it would be the
+    # compliance defect SPEC-003 §7 exists to prevent.
+    await session.commit()
+    return result
+
+
 @router.post("/bulk")
 async def bulk(
     body: BulkBody,

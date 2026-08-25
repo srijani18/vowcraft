@@ -10,9 +10,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
-from vowcraft_db import AuditLog, Correction
+import pytest
+from sqlalchemy import func, select
+from vowcraft_db import ActionItem, AuditLog, Correction
 
+from app.core.exceptions import AppError
+from app.db.repositories.users import AuditRepository
 from app.services.action_items import ActionItemService
 
 NOW = datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc)
@@ -417,3 +420,113 @@ class TestBulkUpdate:
             await db_session.scalars(select(AuditLog).where(AuditLog.action_item_id == row.id))
         ).all()
         assert audit_rows[0].metadata_ == {"note": "Duplicate of another item."}
+
+
+class TestDeleteItem:
+    """SPEC-001. Deleting is board housekeeping, not a decision about the action — the
+    audit trail is what makes that distinction safe, and `AuditLog.actionItemId` is
+    SET NULL so the trail outlives the row (it was CASCADE until this feature existed,
+    which would have made one click erase the record of what was executed)."""
+
+    async def test_an_item_is_deleted(
+        self, make_user, make_transcript, make_row, db_session, api_settings
+    ):
+        user = await make_user()
+        transcript = await make_transcript(user)
+        item_id = (await make_row(transcript, status="PROPOSED")).id
+
+        result = await ActionItemService(db_session, api_settings).delete_item(
+            user.id, item_id, "r1"
+        )
+
+        assert result == {"ok": True}
+        assert await db_session.scalar(
+            select(func.count()).select_from(ActionItem).where(ActionItem.id == item_id)
+        ) == 0
+
+    async def test_the_audit_trail_survives(
+        self, make_user, make_transcript, make_row, db_session, api_settings
+    ):
+        """The property the schema change exists for. The rows detach rather than vanish."""
+        user = await make_user()
+        transcript = await make_transcript(user)
+        item_id = (await make_row(transcript, status="EXECUTED")).id
+        await AuditRepository(db_session).record(
+            event="action_item.executed", actor_id=user.id, action_item_id=item_id
+        )
+        await db_session.flush()
+
+        await ActionItemService(db_session, api_settings).delete_item(user.id, item_id, "r1")
+        await db_session.flush()
+
+        surviving = await db_session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.event == "action_item.executed")
+        )
+        assert surviving == 1, "the audit row was deleted with the item"
+
+    async def test_an_executed_item_can_be_deleted(
+        self, make_user, make_transcript, make_row, db_session, api_settings
+    ):
+        """Not refused: what it did in the world already happened, the audit keeps the
+        record, and refusing would leave the board permanently un-tidyable."""
+        user = await make_user()
+        transcript = await make_transcript(user)
+        item_id = (await make_row(transcript, status="EXECUTED")).id
+
+        assert await ActionItemService(db_session, api_settings).delete_item(
+            user.id, item_id, "r1"
+        ) == {"ok": True}
+
+    async def test_an_executing_item_is_refused(
+        self, make_user, make_transcript, make_row, db_session, api_settings
+    ):
+        """A dispatch is in flight against a third party; deleting the row would leave its
+        result with nowhere to be recorded."""
+        user = await make_user()
+        transcript = await make_transcript(user)
+        item_id = (await make_row(transcript, status="EXECUTING")).id
+
+        with pytest.raises(AppError) as excinfo:
+            await ActionItemService(db_session, api_settings).delete_item(user.id, item_id, "r1")
+
+        assert excinfo.value.code == "execution_in_progress"
+
+    async def test_another_users_item_is_not_found(
+        self, make_user, make_transcript, make_row, db_session, api_settings
+    ):
+        """404 rather than 403, so a guessed id is not an enumeration oracle."""
+        mine = await make_user(email="mine@acme.test")
+        theirs = await make_user(email="theirs@acme.test")
+        their_transcript = await make_transcript(theirs)
+        their_item = (await make_row(their_transcript, status="PROPOSED")).id
+
+        with pytest.raises(AppError) as excinfo:
+            await ActionItemService(db_session, api_settings).delete_item(
+                mine.id, their_item, "r1"
+            )
+
+        assert excinfo.value.status_code == 404
+        assert await db_session.scalar(
+            select(func.count()).select_from(ActionItem).where(ActionItem.id == their_item)
+        ) == 1, "another user's item was deleted"
+
+    async def test_a_blocking_item_can_be_deleted_without_taking_dependents(
+        self, make_user, make_transcript, make_row, db_session, api_settings
+    ):
+        """`dependsOnId` is SET NULL, so the chain loosens instead of cascading into a
+        multi-item deletion nobody asked for."""
+        user = await make_user()
+        transcript = await make_transcript(user)
+        blocker_id = (await make_row(transcript, status="PROPOSED")).id
+        dependent_id = (
+            await make_row(transcript, status="PROPOSED", depends_on_id=blocker_id)
+        ).id
+
+        await ActionItemService(db_session, api_settings).delete_item(user.id, blocker_id, "r1")
+        await db_session.flush()
+
+        assert await db_session.scalar(
+            select(func.count()).select_from(ActionItem).where(ActionItem.id == dependent_id)
+        ) == 1, "the dependent was deleted too"

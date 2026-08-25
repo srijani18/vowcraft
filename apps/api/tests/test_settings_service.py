@@ -35,18 +35,20 @@ class TestGetDefaults:
         assert view["orgDomains"] == []
         assert view["approvalThresholds"] == {}
 
-    async def test_routing_options_offer_only_capabilities_with_more_than_one_provider(self, db_session, make_user):
-        # CALENDAR (google_calendar), TASK (notion) and REMINDER (slack) each have exactly
-        # one adapter — offering a "choice" of one is not a choice. Only EMAIL (gmail,
-        # sendgrid) has two.
+    async def test_routing_options_offer_nothing_while_every_capability_has_one_provider(
+        self, db_session, make_user
+    ):
+        """Offering a "choice" of one is not a choice, so a capability with a single live
+        provider is omitted. EMAIL used to qualify (gmail + sendgrid) and no longer does:
+        SendGrid is gated, so every capability is down to one and the picker is empty.
+
+        Asserted rather than left implicit because it is a visible consequence — the
+        Preferences page's provider-routing section has nothing to render, and it should
+        hide rather than show an empty box. Un-gating SendGrid restores the option, and
+        this test failing is how that gets noticed."""
         user = await make_user()
         view = await _service(db_session).get(user.id)
-        capabilities = {o["capability"] for o in view["routingOptions"]}
-        assert capabilities == {"EMAIL"}
-        email = next(o for o in view["routingOptions"] if o["capability"] == "EMAIL")
-        assert {p["id"] for p in email["providers"]} == {"gmail", "sendgrid"}
-        assert next(p for p in email["providers"] if p["id"] == "gmail")["isDefault"] is True
-        assert next(p for p in email["providers"] if p["id"] == "sendgrid")["isDefault"] is False
+        assert view["routingOptions"] == []
 
     async def test_time_zones_are_offered_for_the_picker(self, db_session, make_user):
         user = await make_user()
@@ -164,10 +166,19 @@ class TestGuardrailValidation:
         assert exc.value.status_code == 422
         assert exc.value.code == "invalid_routing"
 
-    async def test_routing_email_to_sendgrid_is_accepted(self, db_session, make_user):
+    async def test_routing_email_to_a_gated_provider_is_refused(self, db_session, make_user):
+        """SendGrid is implemented but withheld, so a stored preference naming it must be
+        refused at the point of saving — not accepted and then silently ignored by
+        `resolve_provider`, which would leave a setting the UI displays and the executor
+        disregards."""
         user = await make_user()
-        result = await _service(db_session).update(user.id, {"providerRouting": {"EMAIL": "sendgrid"}}, "req_1")
-        assert result["providerRouting"]["EMAIL"] == "sendgrid"
+
+        with pytest.raises(AppError) as excinfo:
+            await _service(db_session).update(
+                user.id, {"providerRouting": {"EMAIL": "sendgrid"}}, "req_1"
+            )
+
+        assert excinfo.value.status_code == 422
 
 
 class TestSettingsPatchSchema:

@@ -11,6 +11,7 @@ import type { ListResult } from '@/server/action-items/service'
 import {
   ApiError,
   bulkOp,
+  deleteItem,
   executeItem,
   fetchList,
   getWorkflow,
@@ -20,6 +21,7 @@ import {
   type WorkflowOutcome,
   type WorkflowPreview,
 } from './api'
+import { Modal } from '@/components/ui/Modal'
 import { ActionItemCard } from './ActionItemCard'
 import { EditModal } from './EditModal'
 import { ExecuteModal } from './ExecuteModal'
@@ -58,6 +60,7 @@ export function Board({ initial, initialSearch }: { initial: ListResult; initial
   const [editing, setEditing] = useState<ActionItemDTO | null>(null)
   const [saving, setSaving] = useState(false)
 
+  const [deleting, setDeleting] = useState<ActionItemDTO | null>(null)
   const [executeTarget, setExecuteTarget] = useState<ActionItemDTO | null>(null)
   const [preview, setPreview] = useState<ExecuteOutcome | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
@@ -132,6 +135,33 @@ export function Board({ initial, initialSearch }: { initial: ListResult; initial
       })
     } finally {
       markBusy(item.id, false)
+    }
+  }
+
+  const confirmDelete = async () => {
+    if (!deleting) return
+    const target = deleting
+    markBusy(target.id, true)
+    try {
+      await deleteItem(target.id)
+      setDeleting(null)
+      // Refetched rather than spliced out locally: deleting an item can loosen a
+      // dependency (`dependsOnId` is SET NULL), which changes whether *other* cards are
+      // executable. A local removal would leave those stale.
+      refresh()
+      toast.push({
+        tone: 'success',
+        title: 'Action item deleted',
+        detail: 'The audit trail for it is kept.',
+      })
+    } catch (err) {
+      toast.push({
+        tone: 'error',
+        title: 'Could not delete this action',
+        detail: (err as ApiError).message,
+      })
+    } finally {
+      markBusy(target.id, false)
     }
   }
 
@@ -392,6 +422,7 @@ export function Board({ initial, initialSearch }: { initial: ListResult; initial
                       onEdit={() => setEditing(item)}
                       onExecute={() => void openExecute(item)}
                       onRunWorkflow={() => void openWorkflow(item)}
+                      onDelete={() => setDeleting(item)}
                     />
                   ))}
                 </div>
@@ -458,6 +489,36 @@ export function Board({ initial, initialSearch }: { initial: ListResult; initial
         onClose={() => setWorkflowTarget(null)}
         onConfirm={confirmWorkflow}
       />
+
+      <Modal
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title="Delete this action item?"
+        subtitle={deleting?.description}
+        icon="bi-trash"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleting(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              icon="bi-trash"
+              disabled={deleting !== null && busyIds.has(deleting.id)}
+              onClick={() => void confirmDelete()}
+            >
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink-muted">
+          Removes it from the board. The audit trail is kept — what was proposed, approved
+          and executed stays in the audit log, so deleting this destroys no record.
+          {deleting?.status === 'EXECUTED' &&
+            ' This action already ran, and deleting it does not undo what it did.'}
+        </p>
+      </Modal>
     </>
   )
 }
