@@ -64,13 +64,20 @@ class LlmProvider:
     kind: str = "openai"  # "openai" | "gemini"
 
 
+#: Preference order, and `resolve()` takes the first entry with a key — so this is the
+#: real routing decision, not a display list. Keep it in step with the EXTRACTION block of
+#: `credentials.py`'s CATALOG, which the credentials page reads to name the module's active
+#: service: when the two disagree, that page names a provider that never runs.
+#:
+#: Groq leads on free-tier headroom (14,400 requests/day against Gemini's 1,500), which is
+#: what decides it — both do forced tool calls reliably enough for this prompt.
 PROVIDERS: tuple[LlmProvider, ...] = (
     LlmProvider(
         "groq_llm", "Groq (GPT-OSS 120B)", "Groq", "openai/gpt-oss-120b", "groq_llm", True,
         "https://api.groq.com/openai/v1",
     ),
     LlmProvider(
-        "google_gemini", "Google Gemini", "Gemini", "gemini-2.0-flash", "google_gemini", True,
+        "google_gemini", "Google Gemini", "Gemini", "gemini-3.6-flash", "google_gemini", True,
         kind="gemini",
     ),
     LlmProvider(
@@ -427,7 +434,7 @@ class LlmService:
         # form, so nullable fields are declared plain and nullability is enforced on the way
         # back instead. Same contract, different dialect.
         declaration = json.loads(
-            re.sub(r'\["(\w+)","null"\]', r'"\1"', json.dumps(tool["input_schema"]))
+            re.sub(r'\["(\w+)",\s*"null"\]', r'"\1"', json.dumps(tool["input_schema"]))
         )
         response = await client.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{provider.model}"

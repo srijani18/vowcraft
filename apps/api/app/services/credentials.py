@@ -115,7 +115,7 @@ CATALOG: tuple[ServiceSpec, ...] = (
     ),
     ServiceSpec(
         "local_whisper", "Local Whisper / WhisperX", "TRANSCRIPTION",
-        "Runs in the asr container with diarization. No data leaves the machine.", "local",
+        "Self-hosted Whisper. Needs an ASR service you run — none ships with this repo, so this entry currently backs the bundled sample only.", "local",
         "Free forever. Needs ~2 GB RAM for the small model.",
         docs_url="https://github.com/m-bain/whisperX", local_only=True,
         models=("whisper-small", "whisper-large-v3 + pyannote"),
@@ -156,23 +156,31 @@ CATALOG: tuple[ServiceSpec, ...] = (
     ),
 
     # ═════════════════════════════════════════════════════════ EXTRACTION ══
-    ServiceSpec(
-        "google_gemini", "Google Gemini", "EXTRACTION",
-        "Generous free tier with reliable function calling. Strong default.", "free",
-        "Free tier: 1,500 requests/day on Flash models.",
-        fields=(_api_key("AIza…"),), env_var="GOOGLE_GEMINI_API_KEY",
-        docs_url="https://aistudio.google.com/apikey",
-        verify=VerifyRecipe("https://generativelanguage.googleapis.com/v1beta/models", auth="query"),
-        models=("gemini-2.0-flash", "gemini-2.5-pro"),
-    ),
+    # Order matters twice over, so keep it in step with `PROVIDERS` in services/llm.py:
+    # `moduleAvailability` reports the first *configured* entry as the module's active
+    # service, while `llm.py` independently picks the first configured provider to
+    # actually call. When the two disagree, the credentials page confidently names a
+    # provider that never runs — which it did, listing Gemini first while Groq served
+    # every extraction.
     ServiceSpec(
         "groq_llm", "Groq — Llama / Qwen", "EXTRACTION",
-        "Sub-second extraction on open models. Uses the same key as Groq transcription.", "free",
+        "Sub-second extraction on open models, and the largest free allowance here. "
+        "Uses the same key as Groq transcription. Strong default.", "free",
         "Free tier: 14,400 requests/day.",
         fields=(_api_key("gsk_…"),), env_var="GROQ_API_KEY", shares_key_with="groq",
         docs_url="https://console.groq.com/keys",
         verify=_openai_compatible_verify("https://api.groq.com/openai/v1"),
         models=("openai/gpt-oss-120b", "llama-3.3-70b-versatile"),
+    ),
+    ServiceSpec(
+        "google_gemini", "Google Gemini", "EXTRACTION",
+        "Reliable function calling, but roughly a tenth of Groq's daily free allowance.",
+        "free",
+        "Free tier: 1,500 requests/day on Flash models.",
+        fields=(_api_key("AIza…"),), env_var="GOOGLE_GEMINI_API_KEY",
+        docs_url="https://aistudio.google.com/apikey",
+        verify=VerifyRecipe("https://generativelanguage.googleapis.com/v1beta/models", auth="query"),
+        models=("gemini-3.6-flash", "gemini-2.5-pro"),
     ),
     ServiceSpec(
         "cerebras", "Cerebras", "EXTRACTION",
@@ -344,10 +352,40 @@ CATALOG: tuple[ServiceSpec, ...] = (
 
     # ═══════════════════════════════════════════════════════ INTEGRATIONS ══
     ServiceSpec(
-        "notion", "Notion", "INTEGRATION",
-        "Internal integration token for creating task pages.", "free",
+        "notion", "Notion workspace", "INTEGRATION",
+        "The database new task pages are created in, and an optional internal token.", "free",
         "Free with any Notion plan.",
-        fields=(_api_key("ntn_…", "Create an internal integration, then share your task database with it."),),
+        fields=(
+            # Optional, unlike every other `apiKey` in this catalogue: the Notion adapter
+            # authenticates with the OAuth access token and never reads this. It stays for
+            # the NOTION_API_KEY env fallback and for `verify`, but requiring it would make
+            # this entry unsaveable for the thing it now exists to hold — the database id.
+            FieldSpec(
+                key="apiKey",
+                label="Internal integration token",
+                placeholder="ntn_… (optional — OAuth is used instead)",
+                secret=True,
+                required=False,
+                help="Not needed when you connect Notion via OAuth. Leave blank.",
+            ),
+            # The default the Notion adapter falls back to when an action carries no
+            # `projectId` — which is always, since extraction cannot know a Notion database
+            # id. Its "set a default in Settings" error promised this field long before it
+            # existed; the TypeScript adapter read NOTION_TASK_DATABASE_ID from the
+            # environment instead, and that fallback was dropped in the port.
+            FieldSpec(
+                key="taskDatabaseId",
+                label="Task database id",
+                placeholder="32-character id from the database URL",
+                secret=False,
+                # Required, while `apiKey` above is not — an inversion of every other entry
+                # here, and the honest one: the adapter authenticates with the OAuth token
+                # and cannot create a page without a target database, so this is the field
+                # that makes the entry worth saving.
+                required=True,
+                help="Share the database with your integration first — Notion grants no access by default.",
+            ),
+        ),
         env_var="NOTION_API_KEY",
         docs_url="https://www.notion.so/my-integrations",
         verify=VerifyRecipe(
@@ -356,8 +394,20 @@ CATALOG: tuple[ServiceSpec, ...] = (
         ),
     ),
     ServiceSpec(
+        "notion_oauth", "Notion OAuth app", "INTEGRATION",
+        "Client id and secret for a public Notion integration. Each user then grants "
+        "consent separately.", "free",
+        "Free. Requires the integration's Type to be Public in Notion.",
+        fields=(
+            FieldSpec("clientId", "Client ID", "…", secret=False, required=True),
+            FieldSpec("clientSecret", "Client secret", "secret_…", secret=True, required=True),
+        ),
+        env_var="NOTION_CLIENT_ID",
+        docs_url="https://www.notion.so/my-integrations",
+    ),
+    ServiceSpec(
         "slack", "Slack", "INTEGRATION",
-        "Bot token for scheduled reminders and channel messages.", "free",
+        "Coming soon. Bot token for scheduled reminders and channel messages.", "free",
         "Free with any Slack workspace.",
         fields=(_api_key("xoxb-…"),), env_var="SLACK_BOT_TOKEN",
         docs_url="https://api.slack.com/apps",
@@ -376,10 +426,25 @@ CATALOG: tuple[ServiceSpec, ...] = (
     ),
     ServiceSpec(
         "sendgrid", "SendGrid", "INTEGRATION",
-        "Sends as the organisation from a verified domain — no per-user consent, works "
-        "unattended. Cannot save drafts; Gmail handles those.", "freemium",
-        "Free tier: 100 emails/day. Also set SENDGRID_FROM_EMAIL to a verified sender.",
-        fields=(_api_key("SG.…", "Needs at least the mail.send scope."),), env_var="SENDGRID_API_KEY",
+        "Coming soon. Sends as the organisation from a verified domain — no per-user "
+        "consent, works unattended. Cannot save drafts; Gmail handles those.", "freemium",
+        "Free tier: 100 emails/day. Needs a Verified Sender as the From address.",
+        fields=(
+            _api_key("SG.…", "Needs at least the mail.send scope."),
+            # SendGrid refuses any From it has not verified, so this is not cosmetic: without
+            # a verified sender every send returns 403. It was documented in the cost note
+            # above and read from SENDGRID_FROM_EMAIL only, which meant the one setting that
+            # makes SendGrid work at all required editing a file and restarting a container.
+            FieldSpec(
+                key="fromEmail",
+                label="From address",
+                placeholder="notifications@yourdomain.com",
+                secret=False,
+                required=False,
+                help="Must be a Verified Sender in SendGrid, or every send is refused.",
+            ),
+        ),
+        env_var="SENDGRID_API_KEY",
         docs_url="https://app.sendgrid.com/settings/api_keys",
         verify=VerifyRecipe("https://api.sendgrid.com/v3/scopes", auth="bearer"),
     ),
@@ -718,6 +783,106 @@ class CredentialService:
 
         views = await self.list_views(user_id)
         return next(v for v in views if v["service"] == service)
+
+    async def set_enabled(
+        self, user_id: str, service: str, enabled: bool, request_id: str = ""
+    ) -> dict[str, Any]:
+        """Turns a stored credential off without discarding it.
+
+        Separate from `save` because `save` requires the secrets: flipping a flag should not
+        demand that the user paste their key again, and there is nowhere to read it back from
+        (there is deliberately no read path for a stored secret).
+
+        The point is provider preference. `resolve` walks the catalogue in order and takes the
+        first *enabled* entry, so disabling one is how a user chooses the next — which is the
+        only way to prefer a paid provider over a free one that ranks above it. Deepgram is
+        the case that forced this: it is the only transcriber that diarizes, but Groq is free
+        and therefore first, so "I want speaker labels" was previously unexpressible.
+        """
+        spec = find_service(service)
+        if spec is None:
+            raise not_found(f"Unknown service \u201c{service}\u201d.")
+
+        row = await self.session.scalar(
+            select(Credential).where(
+                Credential.user_id == user_id, Credential.service == service
+            )
+        )
+        if row is None:
+            raise not_found(f"No stored key for {spec.display_name}.")
+
+        preserved: list[str] = []
+        if not enabled:
+            preserved = await self._preserve_dependents(user_id, service, row)
+
+        row.enabled = enabled
+        await self.session.flush()
+        await AuditRepository(self.session).record(
+            event="credential.enabled" if enabled else "credential.disabled",
+            actor_id=user_id, request_id=request_id,
+            # Field names and flags only, never a value (SPEC-004 §9).
+            metadata={"service": service, "enabled": enabled, "preservedFor": preserved},
+        )
+        views = await self.list_views(user_id)
+        view = next(v for v in views if v["service"] == service)
+        # Reported so the UI can say what it did rather than silently copying a secret.
+        return {**view, "preservedFor": preserved}
+
+    async def _preserve_dependents(
+        self, user_id: str, service: str, row: Credential
+    ) -> list[str]:
+        """Give every capability that *borrows* this key its own copy, before it is disabled.
+
+        `shares_key_with` exists so one Groq account does not have to be pasted twice — the
+        transcription entry's key also serves extraction. But `enabled` lives on the row, and
+        one row serves both, so disabling "Groq — Whisper" also disabled "Groq — Llama/Qwen"
+        and silently broke extraction. The convenience became a trap: the user asked to stop
+        transcribing with Groq and lost action-item extraction as a side effect.
+
+        Copying the secret into the dependent's own row first makes "disable this one" mean
+        exactly that. The dependent then resolves from its own row (checked before the
+        sibling fallback), so the two become independent from this point on.
+        """
+        secrets = self._decrypt(row, user_id, service)
+        if not secrets:
+            # Undecryptable: nothing to copy, and the dependent was already broken.
+            return []
+
+        preserved: list[str] = []
+        for spec in _siblings_of(service):
+            if spec.shares_key_with != service:
+                continue
+            # Only if it has no key of its own — an existing row is already independent.
+            if await self._row(user_id, spec.service) is not None:
+                continue
+            # And only if it was actually relying on this one; an env-configured dependent
+            # needs no copy.
+            if self._env_value(spec):
+                continue
+            self.session.add(
+                Credential(
+                    user_id=user_id,
+                    service=spec.service,
+                    module=spec.module,
+                    secrets_enc=encrypt_json(
+                        secrets,
+                        self.settings.APP_ENCRYPTION_KEY,
+                        f"cred:{user_id}:{spec.service}",
+                    ),
+                    hints={k: _mask(v) for k, v in secrets.items()},
+                    enabled=True,
+                    status="UNVERIFIED",
+                )
+            )
+            preserved.append(spec.display_name)
+
+        if preserved:
+            await self.session.flush()
+            logger.info(
+                "credential.preserved_for_dependents",
+                service=service, dependents=preserved, userId=user_id,
+            )
+        return preserved
 
     async def delete(self, user_id: str, service: str, request_id: Optional[str] = None) -> dict[str, Any]:
         spec = find_service(service)

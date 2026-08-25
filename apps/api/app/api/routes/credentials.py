@@ -64,6 +64,30 @@ async def save_credential(
     return result
 
 
+class EnabledBody(BaseModel):
+    enabled: bool
+
+
+@router.patch("/{service}")
+async def set_enabled(
+    service: str,
+    body: EnabledBody,
+    user: CurrentUser,
+    session: SessionDep,
+    settings: SettingsDep,
+    request_id: RequestIdDep,
+) -> dict:
+    """Toggles a stored key on or off. Deliberately not the PUT above: that requires the
+    secrets, and there is no read path for a stored one, so flipping a flag must not mean
+    pasting the key again. Disabling is how a user expresses provider preference —
+    `resolve` takes the first *enabled* entry in catalogue order."""
+    result = await CredentialService(session, settings).set_enabled(
+        user.id, service, body.enabled, request_id
+    )
+    await session.commit()
+    return result
+
+
 @router.delete("/{service}")
 async def delete_credential(
     service: str, user: CurrentUser, session: SessionDep, settings: SettingsDep, request_id: RequestIdDep

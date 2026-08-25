@@ -108,6 +108,45 @@ export function CredentialsManager({
     }
   }
 
+  /*
+   * Disabling is how a user expresses *provider preference*. `resolve` walks the catalogue
+   * in order and takes the first enabled entry, so turning one off promotes the next — the
+   * only way to prefer a provider that ranks below a configured one. Deepgram is the case
+   * that needs it: it is the only transcriber that separates speakers, but Groq is free and
+   * therefore listed first, so "give me speaker labels" is expressed by switching Groq's
+   * transcription key off rather than deleting it.
+   */
+  const setEnabled = async (service: string, enabled: boolean) => {
+    setBusy(service)
+    try {
+      const response = await apiFetch(`/api/credentials/${service}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      })
+      if (!response.ok) throw new Error(enabled ? 'Enable failed' : 'Disable failed')
+      // A shared key serves more than one capability, so disabling it hands each dependent
+      // its own copy first. Said out loud rather than done silently: a secret being
+      // duplicated on the user's behalf is not something to discover later.
+      const preserved = ((await response.json().catch(() => null)) as
+        | { preservedFor?: string[] }
+        | null)?.preservedFor
+      await refresh()
+      toast.push({
+        tone: 'info',
+        title: enabled ? 'Key enabled' : 'Key disabled',
+        detail: enabled
+          ? 'This provider is available again.'
+          : preserved && preserved.length > 0
+            ? `The key is kept, and ${preserved.join(' and ')} now holds its own copy so it keeps working.`
+            : 'The key is kept, but this provider will be skipped.',
+      })
+    } catch (err) {
+      toast.push({ tone: 'error', title: 'Could not change that', detail: (err as Error).message })
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const remove = async (service: string) => {
     setBusy(service)
     try {
@@ -236,6 +275,14 @@ export function CredentialsManager({
                               rejected
                             </Badge>
                           )}
+                          {/* Stated, not implied. A disabled key is skipped by `resolve`,
+                              so without this the row reads as configured while the module
+                              silently uses something else — or nothing. */}
+                          {cred.source === 'USER' && !cred.enabled && (
+                            <Badge tone="warn" icon="bi-pause-circle">
+                              disabled
+                            </Badge>
+                          )}
                         </div>
 
                         <p className="mt-1.5 text-xs text-ink-muted">{cred.blurb}</p>
@@ -308,6 +355,21 @@ export function CredentialsManager({
                                 loading={busy === cred.service}
                               >
                                 Test
+                              </Button>
+                            )}
+                            {cred.source === 'USER' && (
+                              <Button
+                                variant="ghost"
+                                icon={cred.enabled ? 'bi-toggle-on' : 'bi-toggle-off'}
+                                onClick={() => void setEnabled(cred.service, !cred.enabled)}
+                                disabled={busy === cred.service}
+                                title={
+                                  cred.enabled
+                                    ? 'Skip this provider without deleting the key'
+                                    : 'Make this provider available again'
+                                }
+                              >
+                                {cred.enabled ? 'Disable' : 'Enable'}
                               </Button>
                             )}
                             {cred.source === 'USER' && (

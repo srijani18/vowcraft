@@ -99,7 +99,9 @@ export const CATALOG: readonly ServiceSpec[] = [
     service: 'local_whisper',
     displayName: 'Local Whisper / WhisperX',
     module: 'TRANSCRIPTION',
-    blurb: 'Runs in the asr container with diarization. No data leaves the machine.',
+    blurb:
+      'Self-hosted Whisper. Needs an ASR service you run — none ships with this repo, so ' +
+      'this entry currently backs the bundled sample only.',
     tier: 'local',
     costNote: 'Free forever. Needs ~2 GB RAM for the small model.',
     fields: [],
@@ -160,19 +162,10 @@ export const CATALOG: readonly ServiceSpec[] = [
   },
 
   // ═════════════════════════════════════════════════════════ EXTRACTION ══
-  {
-    service: 'google_gemini',
-    displayName: 'Google Gemini',
-    module: 'EXTRACTION',
-    blurb: 'Generous free tier with reliable function calling. Strong default.',
-    tier: 'free',
-    costNote: 'Free tier: 1,500 requests/day on Flash models.',
-    fields: [API_KEY('AIza…')],
-    envVar: 'GOOGLE_GEMINI_API_KEY',
-    docsUrl: 'https://aistudio.google.com/apikey',
-    verify: { url: 'https://generativelanguage.googleapis.com/v1beta/models', auth: 'query' },
-    models: ['gemini-2.0-flash', 'gemini-2.5-pro'],
-  },
+  // Order matters: `moduleAvailability` names the first *configured* entry as the
+  // module's active service, so this has to agree with the backend's own preference
+  // order (`PROVIDERS` in apps/api/app/services/llm.py) or this page confidently names
+  // a provider that never actually runs.
   {
     service: 'groq_llm',
     displayName: 'Groq — Llama / Qwen',
@@ -180,7 +173,9 @@ export const CATALOG: readonly ServiceSpec[] = [
     // One Groq account covers both endpoints, so the key entered for transcription is
     // reused here rather than asked for twice.
     sharesKeyWith: 'groq',
-    blurb: 'Sub-second extraction on open models. Uses the same key as Groq transcription.',
+    blurb:
+      'Sub-second extraction on open models, and the largest free allowance here. ' +
+      'Uses the same key as Groq transcription. Strong default.',
     tier: 'free',
     costNote: 'Free tier: 14,400 requests/day.',
     fields: [API_KEY('gsk_…')],
@@ -188,6 +183,19 @@ export const CATALOG: readonly ServiceSpec[] = [
     docsUrl: 'https://console.groq.com/keys',
     verify: openaiCompatibleVerify('https://api.groq.com/openai/v1'),
     models: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'],
+  },
+  {
+    service: 'google_gemini',
+    displayName: 'Google Gemini',
+    module: 'EXTRACTION',
+    blurb: "Reliable function calling, but roughly a tenth of Groq's daily free allowance.",
+    tier: 'free',
+    costNote: 'Free tier: 1,500 requests/day on Flash models.',
+    fields: [API_KEY('AIza…')],
+    envVar: 'GOOGLE_GEMINI_API_KEY',
+    docsUrl: 'https://aistudio.google.com/apikey',
+    verify: { url: 'https://generativelanguage.googleapis.com/v1beta/models', auth: 'query' },
+    models: ['gemini-3.6-flash', 'gemini-2.5-pro'],
   },
   {
     service: 'cerebras',
@@ -451,12 +459,37 @@ export const CATALOG: readonly ServiceSpec[] = [
   // ═══════════════════════════════════════════════════════ INTEGRATIONS ══
   {
     service: 'notion',
-    displayName: 'Notion',
+    displayName: 'Notion workspace',
     module: 'INTEGRATION',
-    blurb: 'Internal integration token for creating task pages.',
+    blurb: 'The database new task pages are created in, and an optional internal token.',
     tier: 'free',
     costNote: 'Free with any Notion plan.',
-    fields: [API_KEY('ntn_…', 'Create an internal integration, then share your task database with it.')],
+    fields: [
+      {
+        // Optional, unlike every other apiKey here: the Notion adapter authenticates with
+        // the OAuth access token and never reads this. Requiring it would make this entry
+        // unsaveable for the thing it now exists to hold — the database id.
+        key: 'apiKey',
+        label: 'Internal integration token',
+        placeholder: 'ntn_… (optional — OAuth is used instead)',
+        secret: true,
+        required: false,
+        help: 'Not needed when you connect Notion via OAuth. Leave blank.',
+      },
+      {
+        // The default the Notion adapter falls back to when an action carries no
+        // `projectId` — which is always, since extraction cannot know a Notion database id.
+        key: 'taskDatabaseId',
+        label: 'Task database id',
+        placeholder: '32-character id from the database URL',
+        secret: false,
+        // Required, while apiKey above is not — the inverse of every other entry, and the
+        // honest one: auth comes from the OAuth token, but no page can be created without
+        // a target database.
+        required: true,
+        help: 'Share the database with your integration first — Notion grants no access by default.',
+      },
+    ],
     envVar: 'NOTION_API_KEY',
     docsUrl: 'https://www.notion.so/my-integrations',
     verify: {
@@ -469,13 +502,29 @@ export const CATALOG: readonly ServiceSpec[] = [
     service: 'slack',
     displayName: 'Slack',
     module: 'INTEGRATION',
-    blurb: 'Bot token for scheduled reminders and channel messages.',
+    blurb: 'Coming soon. Bot token for scheduled reminders and channel messages.',
     tier: 'free',
     costNote: 'Free with any Slack workspace.',
     fields: [API_KEY('xoxb-…')],
     envVar: 'SLACK_BOT_TOKEN',
     docsUrl: 'https://api.slack.com/apps',
     verify: { url: 'https://slack.com/api/auth.test', auth: 'bearer' },
+  },
+  {
+    service: 'notion_oauth',
+    displayName: 'Notion OAuth app',
+    module: 'INTEGRATION',
+    blurb:
+      'Client id and secret for a public Notion integration. Each user then grants ' +
+      'consent separately.',
+    tier: 'free',
+    costNote: "Free. Requires the integration's Type to be Public in Notion.",
+    fields: [
+      { key: 'clientId', label: 'Client ID', placeholder: '…', secret: false, required: true },
+      { key: 'clientSecret', label: 'Client secret', placeholder: 'secret_…', secret: true, required: true },
+    ],
+    envVar: 'NOTION_CLIENT_ID',
+    docsUrl: 'https://www.notion.so/my-integrations',
   },
   {
     service: 'google',
@@ -502,12 +551,22 @@ export const CATALOG: readonly ServiceSpec[] = [
     displayName: 'SendGrid',
     module: 'INTEGRATION',
     blurb:
-      'Sends as the organisation from a verified domain — no per-user consent, works ' +
+      'Coming soon. Sends as the organisation from a verified domain — no per-user consent, works ' +
       'unattended. Cannot save drafts; Gmail handles those.',
     tier: 'freemium',
-    costNote: 'Free tier: 100 emails/day. Also set SENDGRID_FROM_EMAIL to a verified sender.',
+    costNote: 'Free tier: 100 emails/day. Needs a Verified Sender as the From address.',
     fields: [
       API_KEY('SG.…', 'Needs at least the mail.send scope.'),
+      {
+        // Not cosmetic: SendGrid refuses any From it has not verified, so without this
+        // every send is a 403.
+        key: 'fromEmail',
+        label: 'From address',
+        placeholder: 'notifications@yourdomain.com',
+        secret: false,
+        required: false,
+        help: 'Must be a Verified Sender in SendGrid, or every send is refused.',
+      },
     ],
     envVar: 'SENDGRID_API_KEY',
     docsUrl: 'https://app.sendgrid.com/settings/api_keys',
