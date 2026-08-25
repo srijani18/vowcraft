@@ -173,6 +173,17 @@ class TranscriptService:
         summary["speakers"] = [
             {"id": sp.id, "label": sp.label, "displayName": sp.display_name} for sp in speakers
         ]
+        # Reported from the stored asset rather than inferred from `sourceType`, because the
+        # two can disagree: a live capture (SPEC-013) keeps only segments — the tab's audio
+        # is never persisted — but an upload whose asset was pruned is equally audio-less.
+        # The reader needs to know whether a player can work, not how the words arrived.
+        summary["hasAudio"] = (
+            await self.session.scalar(
+                select(func.count())
+                .select_from(TranscriptAsset)
+                .where(TranscriptAsset.transcript_id == transcript_id)
+            )
+        ) > 0
         return summary
 
     async def rename_speakers(

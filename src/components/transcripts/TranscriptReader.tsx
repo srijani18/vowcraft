@@ -68,6 +68,10 @@ export function TranscriptReader({ transcript, initialAtMs, initialQuery }: Prop
    * going unused by this particular caller.
    */
   useEffect(() => {
+    // Nothing to fetch when no audio was kept. This used to request it regardless and
+    // report "Could not load the audio", turning an entirely expected condition — a live
+    // capture never stores the tab's audio — into an error the user had to dismiss.
+    if (!transcript.hasAudio) return
     let objectUrl: string | null = null
     let cancelled = false
     apiFetch(`/api/transcripts/${transcript.id}/audio`)
@@ -85,7 +89,7 @@ export function TranscriptReader({ transcript, initialAtMs, initialQuery }: Prop
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcript.id])
+  }, [transcript.id, transcript.hasAudio])
 
   const hasWords = transcript.segments.some((s) => s.words.length > 0)
 
@@ -434,98 +438,112 @@ export function TranscriptReader({ transcript, initialAtMs, initialQuery }: Prop
         </p>
       )}
 
-      {/* ── player */}
-      <GlassCard className="lit-edge p-4">
-        {audioSrc && <audio ref={audioRef} src={audioSrc} preload="metadata" className="hidden" />}
+      {/* player, or an explanation of why there is none */}
+      {transcript.hasAudio ? (
+        <GlassCard className="lit-edge p-4">
+          {audioSrc && <audio ref={audioRef} src={audioSrc} preload="metadata" className="hidden" />}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            variant="primary"
-            icon={playing ? 'bi-pause-fill' : 'bi-play-fill'}
-            onClick={() => {
-              const audio = audioRef.current
-              if (!audio) return
-              if (audio.paused) void audio.play().catch(() => undefined)
-              else audio.pause()
-            }}
-          >
-            {playing ? 'Pause' : 'Play'}
-          </Button>
-
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" icon="bi-skip-backward-fill" onClick={() => seek(Math.max(0, currentMs - 10_000), { play: playing })}>
-              10s
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="primary"
+              icon={playing ? 'bi-pause-fill' : 'bi-play-fill'}
+              onClick={() => {
+                const audio = audioRef.current
+                if (!audio) return
+                if (audio.paused) void audio.play().catch(() => undefined)
+                else audio.pause()
+              }}
+            >
+              {playing ? 'Pause' : 'Play'}
             </Button>
-            <Button variant="ghost" icon="bi-skip-forward-fill" onClick={() => seek(currentMs + 10_000, { play: playing })}>
-              10s
+
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" icon="bi-skip-backward-fill" onClick={() => seek(Math.max(0, currentMs - 10_000), { play: playing })}>
+                10s
+              </Button>
+              <Button variant="ghost" icon="bi-skip-forward-fill" onClick={() => seek(currentMs + 10_000, { play: playing })}>
+                10s
+              </Button>
+            </div>
+
+            <span className="mono-num tabular-nums text-ink-muted">
+              {formatTimestamp(currentMs)} / {formatTimestamp(transcript.durationMs ?? 0)}
+            </span>
+
+            <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+              <span className="sr-only">Playback speed</span>
+              <select
+                value={rate}
+                onChange={(e) => {
+                  const value = Number(e.target.value)
+                  setRate(value)
+                  if (audioRef.current) audioRef.current.playbackRate = value
+                }}
+                className="rounded-lg border border-edge/30 bg-base px-2 py-1 text-xs"
+              >
+                {[0.75, 1, 1.25, 1.5, 2].map((r) => (
+                  <option key={r} value={r}>
+                    {r}×
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <Button
+              variant={follow ? 'accent' : 'secondary'}
+              icon={follow ? 'bi-pin-fill' : 'bi-pin'}
+              onClick={() => setFollow((v) => !v)}
+              className="ml-auto"
+              title="Scroll the transcript to keep up with playback"
+            >
+              {follow ? 'Following' : 'Follow along'}
             </Button>
           </div>
 
-          <span className="mono-num tabular-nums text-ink-muted">
-            {formatTimestamp(currentMs)} / {formatTimestamp(transcript.durationMs ?? 0)}
-          </span>
+          {/* progress */}
+          <div className="mt-3">
+            <input
+              type="range"
+              min={0}
+              max={transcript.durationMs ?? 0}
+              value={Math.min(currentMs, transcript.durationMs ?? 0)}
+              onChange={(e) => seek(Number(e.target.value), { play: playing })}
+              aria-label="Seek"
+              className="h-1.5 w-full cursor-pointer accent-accent-fill"
+            />
+          </div>
 
-          <label className="flex items-center gap-1.5 text-xs text-ink-muted">
-            <span className="sr-only">Playback speed</span>
-            <select
-              value={rate}
-              onChange={(e) => {
-                const value = Number(e.target.value)
-                setRate(value)
-                if (audioRef.current) audioRef.current.playbackRate = value
-              }}
-              className="rounded-lg border border-edge/30 bg-base px-2 py-1 text-xs"
-            >
-              {[0.75, 1, 1.25, 1.5, 2].map((r) => (
-                <option key={r} value={r}>
-                  {r}×
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <Button
-            variant={follow ? 'accent' : 'secondary'}
-            icon={follow ? 'bi-pin-fill' : 'bi-pin'}
-            onClick={() => setFollow((v) => !v)}
-            className="ml-auto"
-            title="Scroll the transcript to keep up with playback"
-          >
-            {follow ? 'Following' : 'Follow along'}
-          </Button>
-        </div>
-
-        {/* progress */}
-        <div className="mt-3">
-          <input
-            type="range"
-            min={0}
-            max={transcript.durationMs ?? 0}
-            value={Math.min(currentMs, transcript.durationMs ?? 0)}
-            onChange={(e) => seek(Number(e.target.value), { play: playing })}
-            aria-label="Seek"
-            className="h-1.5 w-full cursor-pointer accent-accent-fill"
-          />
-        </div>
-
-        <p className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-ink-faint">
-          <span>
-            <kbd className="rounded border border-edge/30 px-1">space</kbd> play
-          </span>
-          <span>
-            <kbd className="rounded border border-edge/30 px-1">←</kbd>
-            <kbd className="ml-0.5 rounded border border-edge/30 px-1">→</kbd> 5s
-          </span>
-          <span>
-            <kbd className="rounded border border-edge/30 px-1">J</kbd>
-            <kbd className="ml-0.5 rounded border border-edge/30 px-1">L</kbd> 10s
-          </span>
-          <span>
-            <kbd className="rounded border border-edge/30 px-1">F</kbd> follow
-          </span>
-          <span className="ml-auto">Click any word to jump there.</span>
-        </p>
-      </GlassCard>
+          <p className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-ink-faint">
+            <span>
+              <kbd className="rounded border border-edge/30 px-1">space</kbd> play
+            </span>
+            <span>
+              <kbd className="rounded border border-edge/30 px-1">←</kbd>
+              <kbd className="ml-0.5 rounded border border-edge/30 px-1">→</kbd> 5s
+            </span>
+            <span>
+              <kbd className="rounded border border-edge/30 px-1">J</kbd>
+              <kbd className="ml-0.5 rounded border border-edge/30 px-1">L</kbd> 10s
+            </span>
+            <span>
+              <kbd className="rounded border border-edge/30 px-1">F</kbd> follow
+            </span>
+            <span className="ml-auto">Click any word to jump there.</span>
+          </p>
+        </GlassCard>
+      ) : (
+        <GlassCard className="p-4">
+          <p className="flex items-start gap-2.5 text-xs text-ink-muted">
+            <i className="bi bi-mic-mute mt-0.5 text-ink-faint" aria-hidden />
+            <span>
+              <span className="font-medium text-ink">No audio for this recording.</span>{' '}
+              {transcript.sourceType === 'TAB_CAPTURE'
+                ? 'A live meeting is transcribed as it happens and the shared tab\u2019s audio is never stored, so there is nothing to play back \u2014 the transcript below is the whole record.'
+                : 'The audio for this recording is no longer stored, so it cannot be played. The transcript below is unaffected.'}
+            </span>
+          </p>
+        </GlassCard>
+      )}
 
       {/* ── search + speakers */}
       <div className="flex flex-wrap items-center gap-2">

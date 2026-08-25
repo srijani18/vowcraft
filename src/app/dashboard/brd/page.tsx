@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Badge, Button, EmptyState, GlassCard } from '@/components/ui/primitives'
 import { BrdExportLink } from '@/components/brd/BrdExportLink'
+import { DeleteBrdDocument } from '@/components/brd/DeleteBrdDocument'
 import { apiServerJson } from '@/lib/api-server'
 import type { BrdSummary } from '@/server/brd/service'
 
@@ -102,6 +103,11 @@ export default async function BrdHistoryPage() {
                   {d.requirementCount > 0 && (
                     <BrdExportLink documentId={d.id} format="md" label="Markdown" icon="bi-download" />
                   )}
+                  <DeleteBrdDocument
+                    documentId={d.id}
+                    title={d.title}
+                    revisionCount={d.revisionCount}
+                  />
                 </div>
               </div>
             </GlassCard>
