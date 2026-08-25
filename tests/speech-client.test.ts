@@ -77,7 +77,9 @@ describe('utterances — SPEC-013\'s per-utterance timestamps', () => {
   test('a final frame with atMs is recorded as an utterance', () => {
     const acc = new TranscriptAccumulator()
     acc.add({ text: 'first thing said', final: true }, 1000)
-    assert.deepEqual(acc.utterances, [{ text: 'first thing said', atMs: 1000 }])
+    // `speaker: null` rather than absent: the field is always present so a consumer can
+    // distinguish "nobody attributed this" from speaker index 0.
+    assert.deepEqual(acc.utterances, [{ text: 'first thing said', atMs: 1000, speaker: null }])
   })
 
   test('an interim frame never appears in utterances even with atMs passed', () => {
@@ -98,9 +100,32 @@ describe('utterances — SPEC-013\'s per-utterance timestamps', () => {
     acc.add({ text: 'first', final: true }, 1000)
     acc.add({ text: 'second', final: true }, 2500)
     assert.deepEqual(acc.utterances, [
-      { text: 'first', atMs: 1000 },
-      { text: 'second', atMs: 2500 },
+      { text: 'first', atMs: 1000, speaker: null },
+      { text: 'second', atMs: 2500, speaker: null },
     ])
+  })
+
+  test('a diarized frame carries its speaker index through', () => {
+    // The whole point of SPEC-011 for a live meeting: the relay forwards Deepgram's
+    // speaker index, and this is the only place it is retained between the socket and the
+    // POST that builds segments.
+    const acc = new TranscriptAccumulator()
+    acc.add({ text: 'shall we start', final: true, speaker: 0 }, 1000)
+    acc.add({ text: 'yes go ahead', final: true, speaker: 1 }, 2000)
+    assert.deepEqual(acc.utterances, [
+      { text: 'shall we start', atMs: 1000, speaker: 0 },
+      { text: 'yes go ahead', atMs: 2000, speaker: 1 },
+    ])
+  })
+
+  test('speaker index 0 is kept, not treated as absent', () => {
+    // Deepgram numbers speakers from 0, so a falsy check here would silently drop every
+    // attribution belonging to the first speaker.
+    const acc = new TranscriptAccumulator()
+    acc.add({ text: 'first speaker', final: true, speaker: 0 }, 500)
+    // deepEqual on the whole array rather than indexing, which also proves nothing else
+    // was recorded — and keeps the assertion honest under `noUncheckedIndexedAccess`.
+    assert.deepEqual(acc.utterances, [{ text: 'first speaker', atMs: 500, speaker: 0 }])
   })
 
   test('reset clears utterances too', () => {

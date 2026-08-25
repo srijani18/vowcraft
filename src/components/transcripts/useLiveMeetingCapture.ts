@@ -135,7 +135,14 @@ export function useLiveMeetingCapture(): LiveMeetingCapture {
     primaryAudioTrack.onended = () => void stop()
 
     ws.onmessage = (event) => {
-      let message: { type?: string; text?: string; isFinal?: boolean; message?: string; displayName?: string }
+      let message: {
+        type?: string
+        text?: string
+        isFinal?: boolean
+        speaker?: number | null
+        message?: string
+        displayName?: string
+      }
       try {
         message = JSON.parse(typeof event.data === 'string' ? event.data : '')
       } catch {
@@ -160,7 +167,10 @@ export function useLiveMeetingCapture(): LiveMeetingCapture {
 
       if (message.type === 'transcript' && typeof message.text === 'string') {
         const atMs = performance.now() - captureStartedAt.current
-        accumulator.current.add({ text: message.text, final: Boolean(message.isFinal) }, atMs)
+        accumulator.current.add(
+          { text: message.text, final: Boolean(message.isFinal), speaker: message.speaker ?? null },
+          atMs,
+        )
         setDisplayText(accumulator.current.displayText)
         return
       }
@@ -218,7 +228,11 @@ export function useLiveMeetingCapture(): LiveMeetingCapture {
       const result = await apiJson<{ transcript: { id: string } }>('/api/transcripts/live', {
         method: 'POST',
         body: JSON.stringify({
-          utterances: utterances.map((u) => ({ text: u.text, atMs: Math.round(u.atMs) })),
+          utterances: utterances.map((u) => ({
+            text: u.text,
+            atMs: Math.round(u.atMs),
+            speaker: u.speaker ?? null,
+          })),
           durationMs,
           provider,
         }),

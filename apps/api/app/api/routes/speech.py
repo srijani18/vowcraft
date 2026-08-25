@@ -15,7 +15,7 @@ vendor concepts:
     → binary frames          audio, exactly as MediaRecorder produced it
     → {"type":"stop"}        stop capturing; flush the final utterance
     ← {"type":"ready", …}    upstream connected; provider named for display
-    ← {"type":"transcript", "text":…, "isFinal":bool}
+    ← {"type":"transcript", "text":…, "isFinal":bool, "speaker":int|null}
     ← {"type":"error", "code":…, "message":…}
     ← {"type":"closed", "reason":…}
 """
@@ -158,7 +158,14 @@ async def stream(websocket: WebSocket) -> None:
                 finals.append(utterance.text.strip())
             sent += 1
             await websocket.send_json(
-                {"type": "transcript", "text": utterance.text, "isFinal": utterance.is_final}
+                {
+                    "type": "transcript",
+                    "text": utterance.text,
+                    "isFinal": utterance.is_final,
+                    # Null whenever the provider does not diarize, so the client can tell
+                    # "nobody attributed this" from "speaker 0".
+                    "speaker": utterance.speaker,
+                }
             )
 
         await websocket.send_json(

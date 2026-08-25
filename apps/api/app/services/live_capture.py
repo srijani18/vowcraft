@@ -28,9 +28,14 @@ def _segments_from_utterances(utterances: list[dict[str, Any]]) -> list[dict[str
     boundaries are synthesized from each utterance's client-reported arrival time
     (`atMs`), sorted and clamped to a strictly increasing sequence so an out-of-order or
     duplicate timestamp from the browser can never produce a zero-or-negative-length
-    segment. No speaker label, no words — SPEC-011 diarization is a separate, not-yet-built
-    capability, and inventing a "Speaker 1" here would misrepresent a single mixed audio
-    stream as something it isn't.
+    segment. Still no words: the relay's frames carry no per-word timing to build them from.
+
+    Speaker labels *are* set now, when the provider supplied one. Deepgram diarizes on its
+    streaming endpoint and the relay forwards the index it reports (see `speech.py`), so
+    this is attribution the provider actually made rather than a "Speaker 1" invented here
+    — which is what the previous version rightly refused to do when nothing upstream
+    diarized at all. A provider that does not diarize still yields None throughout, and the
+    reader goes on saying speakers were not separated.
     """
     ordered = sorted(utterances, key=lambda u: u["atMs"])
     segments: list[dict[str, Any]] = []
@@ -41,7 +46,18 @@ def _segments_from_utterances(utterances: list[dict[str, Any]]) -> list[dict[str
             continue
         start = cursor
         end = max(u["atMs"], start + 1)
-        segments.append({"startMs": start, "endMs": end, "text": text, "speakerLabel": None, "words": []})
+        # Provider indices start at 0; every label in this system reads from 1, matching
+        # the upload path's Deepgram mapping and the bundled sample.
+        speaker = u.get("speaker")
+        segments.append(
+            {
+                "startMs": start,
+                "endMs": end,
+                "text": text,
+                "speakerLabel": f"Speaker {int(speaker) + 1}" if speaker is not None else None,
+                "words": [],
+            }
+        )
         cursor = end
     return segments
 
@@ -72,7 +88,12 @@ async def finalize_live_capture(
         status="PROCESSING",
         stage="extracting",
         progress=65,
-        diarized=False,
+        # Computed from what actually arrived, matching the upload path's rule: two or
+        # more distinct labels is diarization, one is a distinction without a difference,
+        # and none means the provider never attributed anything. Hardcoding False here
+        # would have shown "speakers were not separated" over a transcript that plainly
+        # separates them.
+        diarized=len({s["speakerLabel"] for s in segments if s["speakerLabel"]}) > 1,
         transcribe_provider=provider or "browser_tab_capture",
         transcribed_at=now,
         duration_ms=max(duration_ms, segments[-1]["endMs"]),

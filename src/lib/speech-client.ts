@@ -11,6 +11,13 @@
 export interface SpeechFrame {
   text: string
   final: boolean
+  /**
+   * The provider's diarization index for whoever spoke this, or null/undefined when the
+   * provider does not diarize. Kept as the raw index rather than a "Speaker 1" string:
+   * turning it into a label is a presentation decision made once, server-side, where
+   * segments are built.
+   */
+  speaker?: number | null
 }
 
 /**
@@ -26,7 +33,7 @@ export interface SpeechFrame {
 export class TranscriptAccumulator {
   private committed: string[] = []
   private interim = ''
-  private _utterances: { text: string; atMs: number }[] = []
+  private _utterances: { text: string; atMs: number; speaker?: number | null }[] = []
 
   /**
    * `atMs` is optional and additive — the voice-to-BRD flow (SPEC-014) never passes it and
@@ -39,7 +46,7 @@ export class TranscriptAccumulator {
     if (frame.final) {
       const text = frame.text.trim()
       this.committed.push(text)
-      if (atMs !== undefined && text) this._utterances.push({ text, atMs })
+      if (atMs !== undefined && text) this._utterances.push({ text, atMs, speaker: frame.speaker ?? null })
       this.interim = ''
     } else {
       this.interim = frame.text.trim()
@@ -58,7 +65,7 @@ export class TranscriptAccumulator {
 
   /** Each finalised utterance with the timestamp it arrived at — only populated when
    * `add()` was called with `atMs`. Interim frames never appear here. */
-  get utterances(): { text: string; atMs: number }[] {
+  get utterances(): { text: string; atMs: number; speaker?: number | null }[] {
     return this._utterances
   }
 

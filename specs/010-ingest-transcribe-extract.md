@@ -18,7 +18,7 @@ shape faithfully, not about designing it.
 In: upload, storage, transcription, speaker labels where the provider supplies them,
 word timings, extraction, and the job lifecycle around all of it.
 
-Out: the separate Python ASR service (SPEC-011), diarization from `pyannote`, live
+Out: the separate Python ASR service, diarization from self-hosted `pyannote`, live
 call capture (SPEC-013), and semantic search (SPEC-021). Those remain planned. What
 ships here runs entirely in the Node tier against hosted APIs, which is what makes it
 deliverable without a second deployment.
@@ -28,19 +28,49 @@ deliverable without a second deployment.
 Both stages resolve a key through the credential vault (SPEC-004 §3), so a user's own
 key wins over the deployment's.
 
-| Stage | Provider | Model | Free tier |
-|---|---|---|---|
-| Transcribe | **Groq** (default) | `whisper-large-v3-turbo` | ~28,800 audio-seconds/day |
-| Transcribe | OpenAI | `whisper-1` | paid |
-| Extract | **Groq** (default) | `openai/gpt-oss-120b` | 14,400 requests/day |
-| Extract | Google Gemini | `gemini-2.0-flash` | 1,500 requests/day |
-| Extract | Cerebras | `llama-3.3-70b` | 1M tokens/day |
-| Extract | Anthropic / OpenAI | any tool-use model | paid |
+| Stage | Provider | Model | Free tier | Diarizes |
+|---|---|---|---|---|
+| Transcribe | **Groq** (default) | `whisper-large-v3-turbo` | ~28,800 audio-seconds/day | no |
+| Transcribe | Deepgram | `nova-3` | $200 credit, then ~$0.26/hour | **yes** |
+| Transcribe | OpenAI | `whisper-1` | paid | no |
+| Extract | **Groq** (default) | `openai/gpt-oss-120b` | 14,400 requests/day | — |
+| Extract | Google Gemini | `gemini-3.6-flash` | 1,500 requests/day | — |
+| Extract | Cerebras | `llama-3.3-70b` | 1M tokens/day | — |
+| Extract | Anthropic / OpenAI | any tool-use model | paid | — |
 
 Groq is the default for both because one free key covers the entire pipeline. Every
 extraction provider is reached through an **OpenAI-compatible chat completions** call
 except Gemini, which needs its own request shape — so adding a provider is a base URL
 and a model id, not an integration.
+
+### 3.1 Diarization is a provider capability, not a service
+
+Whisper cannot attribute speech to a speaker at all — not a configuration gap, an
+architectural one. So for a long time every transcript came back unattributed and the reader
+said so, while the credentials catalogue advertised Deepgram as offering "built-in
+diarization" and AssemblyAI as offering "diarization, word timings". Both claims were true of
+the vendors and false of this application: neither was implemented as a transcriber, so
+adding either key achieved nothing. Diarization did not need the separate ASR container the
+catalogue's `local_whisper` entry still describes; it needed the provider already being sold.
+
+Deepgram has its own wire format rather than the OpenAI-compatible one — raw request body,
+`Authorization: Token`, query parameters instead of form fields — so it gets its own branch,
+the same shape the Gemini split takes in extraction. Three details are load-bearing:
+
+- **`utterances=true`, not just `diarize=true`.** Word-level `speaker` integers come back
+  regardless, but utterances are already grouped into speaker-contiguous runs, which is
+  exactly the segment shape the reader and the `Word` table are built around. Grouping the
+  words by hand would reimplement that, worse.
+- **Speakers are renumbered from 1.** Deepgram counts from 0; every label in this system
+  reads from 1, matching the bundled sample and the reader's rename control.
+- **`diarized` is computed per response, not per provider.** A single-speaker recording
+  legitimately returns one label, and claiming diarization then would be a distinction
+  without a difference — the reader's "speakers were not separated" notice is the honest
+  answer.
+
+Because Groq is free it ranks first, so a user with both keys still gets Whisper. Preferring
+Deepgram is expressed by disabling Groq's transcription entry — see SPEC-004 §3.1, including
+why disabling a *shared* key hands its dependents their own copy first.
 
 **No key at all is not an error.** `POST /api/transcripts` reports which stage is
 unavailable and links to the credentials page, and a `sample` mode transcribes a
@@ -195,7 +225,9 @@ from Whisper. Words are persisted to the `Word` table the player already expects
 **Speaker labels are best-effort and honestly reported.** Whisper does not diarize.
 Where a provider returns speakers we use them; where it does not, segments carry a
 null speaker and the transcript is flagged `diarized: false` so the UI says "speakers
-not separated" rather than implying a single speaker. Real diarization is SPEC-011.
+not separated" rather than implying a single speaker — which stays true for Whisper, since
+it cannot diarize at all. Diarization arrives by choosing a provider that can (§3.1), not
+by adding a service.
 
 Audio longer than the provider's per-request limit is **chunked on segment
 boundaries** with the offsets re-based, so a 90-minute recording is not simply

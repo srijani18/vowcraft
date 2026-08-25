@@ -28,10 +28,16 @@ SPEC-014 §3 relay, and finalizing the result into an ordinary `Transcript` with
 rows once the user stops — landing on the same dashboard, reader, and action-item pipeline
 every uploaded recording already uses.
 
+**In, provider permitting:**
+- **Diarization.** Originally out, on the reasoning that a single mixed stream has no
+  speaker-separation signal to work with. That was wrong about the provider, not about the
+  audio: Deepgram diarizes on its *streaming* endpoint too, so the signal was available and
+  simply never requested. The relay now asks for it and forwards the index Deepgram reports.
+  The earlier refusal to invent a "Speaker 1" still stands — a provider that does not diarize
+  yields no labels rather than a fabricated one, and `diarized` is computed from what
+  actually arrived. See §4.1.
+
 **Out, deliberately:**
-- **Diarization.** A single mixed audio stream has no speaker-separation signal to work
-  with; SPEC-011 (diarization) is a separate, not-yet-built capability, and inventing a
-  "Speaker 1" label here would misrepresent what was actually captured.
 - **Word-level timing.** The live relay's frames (`Utterance(text, is_final)`,
   `app/services/speech.py`) carry no timing at all, unlike an upload's provider response.
   Segment boundaries are synthesized from each utterance's client-reported arrival time —
@@ -104,9 +110,38 @@ frontend surface for viewing results was needed, because the result is an ordina
 `Transcript` row the reader, the action-items board, and the audit log already know how
 to render.
 
+### 4.1 How a speaker reaches a segment
+
+Diarization on this path is a value threaded through seven layers, and every one of them
+had to change — which is why it stayed unimplemented long after the provider supported it:
+
+1. `DeepgramProvider._url` requests `diarize=true` on the socket.
+2. The frame's speaker sits on the **words**, not the alternative, so the first word
+   carrying one answers for the utterance (a frame is speaker-contiguous in practice).
+3. `Utterance` gains `speaker: Optional[int]` — the raw provider index, not a label.
+4. The WebSocket frame gains `"speaker": int|null`, extending the client contract.
+5. `TranscriptAccumulator` retains it per final utterance; it is the only thing holding
+   this between the socket and the POST.
+6. `POST /api/transcripts/live` accepts it per utterance, bounded (`0..99`) because it
+   arrives from a browser — a wild value would become "Speaker 4000000".
+7. `_segments_from_utterances` maps it to `Speaker N`, numbering from 1.
+
+Two things are deliberate. **The raw index travels, not a `"Speaker 1"` string**, so
+labelling is one presentation decision made where segments are built rather than three
+along the way. And **`speaker` stays optional rather than defaulting to 0**, because 0 is a
+real speaker index — interim frames sometimes omit it, and a default would attribute
+everything to the first speaker.
+
+There is no audio to fall back on and no word timings, so **segment labels are the only
+place a live capture's speakers exist**. Getting the off-by-one wrong here would not degrade
+the feature, it would misattribute sentences to the wrong person while presenting them as
+fact — which is why both the numbering and the "index 0 is not absent" case are pinned by
+tests on both sides of the wire.
+
 ## 5. Known v1 limitations
 
-No diarization; approximate (not word-level) timing; no video capture or storage; manual
+Diarization only when the provider supports it (Deepgram does; a self-hosted WhisperLive
+does not); approximate (not word-level) timing; no video capture or storage; manual
 start required and manual-or-native stop; vendor-agnostic only (no "joins the call"
 capability for any specific tool); requires Chrome or Edge (`getDisplayMedia` audio-track
 support is inconsistent on Safari/Firefox, checked and surfaced explicitly rather than

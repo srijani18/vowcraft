@@ -10,7 +10,7 @@ contracts the earlier phases will write into.**
 | 1.1 | Upload audio/video (MP3, M4A, WAV, WebM, OGG, FLAC, MP4, MOV) | SPEC-010 §4 | **implemented** |
 | 1.2 | Audio from video containers | SPEC-010 §4 | **implemented** (provider-side; no FFmpeg) |
 | 1.3 | Multilingual transcription, auto-detect | SPEC-010 §6 | **implemented** (Groq/OpenAI Whisper) |
-| 1.4 | Speaker diarization + name mapping | SPEC-011 | planned — Whisper does not diarize; reported honestly |
+| 1.4 | Speaker diarization + name mapping | SPEC-010 §3.1, SPEC-013 §4.1 | **done** — via Deepgram, on uploads and live capture. Delivered differently than planned: no `pyannote` service, because the capability was already purchasable from a provider the catalogue advertised but never implemented |
 | 1.5 | Word-level timestamps | SPEC-010 §6 | **implemented** |
 | 1.6 | Progress indicator | SPEC-010 §5 | **implemented** (stage + % on the row, polled) |
 | 1.7 | Play audio, highlight current word | SPEC-012 | range-request streaming built; player surface planned |
