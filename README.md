@@ -5,7 +5,7 @@ side effect in Google Calendar / Notion / Gmail / Slack → immutable audit trai
 
 This repository implements the **whole loop**: upload a recording, get it
 transcribed with word-level timings, have the conversation read for what it actually
-committed to, review the result behind seventeen guardrails, and execute what you
+committed to, review the result behind sixteen guardrails, and execute what you
 approve — on the record.
 
 - **Architecture, with diagrams:** [ARCHITECTURE.md](./ARCHITECTURE.md)
@@ -154,7 +154,7 @@ words, and any warnings to acknowledge. Keyboard: `⌘K` search, then `a` / `r` 
 | Account enumeration | Wrong password and unknown address return an identical status *and* message, with a dummy hash evening out the timing |
 | Open redirect | `?next=` is honoured only for same-origin paths beginning with a single `/` |
 | Nothing executes without a human | Risk tiers gate execution; `autoExecuteLowRisk` defaults to **false** ([SPEC-003 §5](./specs/003-guardrails-approvals.md)) |
-| The client cannot lie | Risk and all 17 guardrails are recomputed server-side at execute time; `riskTier`/`violations` in a request body are ignored |
+| The client cannot lie | Risk and all 16 guardrails are recomputed server-side at execute time; `riskTier`/`violations` in a request body are ignored |
 | No accidental real-world writes | `INTEGRATIONS_MODE=mock` is the **default**; mock results carry `simulated: true` and the UI labels them |
 | No duplicates | Idempotency key = `sha256(itemId + payload)`, checked before the status gate, so an identical repeat replays |
 | No duplicate customer email | Gmail send is treated as non-idempotent: a post-dispatch timeout records `FAILED, uncertain: true` rather than resending |
@@ -315,7 +315,7 @@ ARCHITECTURE.md           complete flow, with mermaid diagrams
 prisma/schema.prisma      17 models · seed.mjs builds the demo meeting
 src/app/                  routes and React components — no business logic
 src/server/               use cases: transactions, dispatch, audit
-src/domain/               pure business logic: readiness, risk, 17 rules
+src/domain/               pure business logic: readiness, risk, 16 rules
 src/integrations/         provider adapters + OAuth token store
 src/lib/                  db, env, logger, retry, crypto, credential vault
 scripts/smoke.sh          executable acceptance criteria
@@ -359,10 +359,12 @@ a human has already decided on**.
 
 ## Not in this slice
 
-Real speaker diarization (needs the Python service in
-[SPEC-011](./specs/ROADMAP.md)), live Teams/Meet capture, the transcript player
-surface, and semantic search. Word timings and range-request audio streaming are
-already built, so the player is a reading surface over data that exists.
+A bot that *joins* a call as a participant. Live meetings are captured by sharing a
+browser tab instead (SPEC-013 §1 sets out why: Google's Meet Media API gates bot access
+behind a developer-preview programme requiring every participant enrolled). Self-hosted
+transcription and embeddings — the `asr` container the catalogue's local entries describe —
+are also out; the capabilities they would provide, diarization included, are reached through
+a provider instead.
 
 Known gaps stated rather than implied: no per-device session revocation, the audit log
 is append-only by code path and database grant rather than hash chaining, and the
