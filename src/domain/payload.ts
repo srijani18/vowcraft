@@ -12,7 +12,7 @@ import type { ActionType } from './types'
 export interface FieldSpec {
   key: string
   label: string
-  kind: 'string' | 'text' | 'datetime' | 'number' | 'emails' | 'enum'
+  kind: 'string' | 'text' | 'datetime' | 'number' | 'emails' | 'enum' | 'documents'
   required: boolean
   /** Minimum length for array-valued fields such as `attendees`. */
   minItems?: number
@@ -49,6 +49,16 @@ export const PAYLOAD_SCHEMA: Record<ActionType, readonly FieldSpec[]> = {
       required: false,
       options: ['draft', 'send'] as const,
       help: 'Drafts are LOW risk; sending externally is HIGH risk.',
+    },
+    {
+      // Chosen explicitly, never inferred from the transcript. Extraction can hear "send
+      // them the BRD" but cannot know which stored document that is, and attaching the
+      // wrong one to an outbound email is a disclosure rather than a typo.
+      key: 'attachments',
+      label: 'Attachments',
+      kind: 'documents',
+      required: false,
+      help: 'Requirements documents to attach. Ownership is re-checked at execution.',
     },
   ],
   REMINDER: [

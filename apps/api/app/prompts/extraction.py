@@ -30,6 +30,8 @@ Rules:
 
 7. actionType NONE is right for context worth recording that nobody has to act on — a stated constraint, a piece of background. Use it rather than forcing a task.
 
+8. For an EMAIL action, write the message itself in emailSubject and emailBody. Write what the sender would actually send: greet the recipient by name, speak in the first person, say the one thing being asked or told, and stop. Do NOT describe the action, do not quote the meeting, and do not explain where the request came from — the reviewer already has that on the card. "I'll email Anjali for the new product BRD" should become a subject like "BRD for the new product" and a body like "Hi Anjali, could you send me the BRD for the new product? Thanks." If the transcript does not make the message clear enough to write, use null rather than inventing content. Leave both null for every other actionType.
+
 Call the tool exactly once."""
 
 

@@ -80,6 +80,32 @@ Authorization Code + PKCE where supported.
   `401` marks the account `needsReauth` and surfaces `409 reauth_required`.
 - Tokens are never logged, never returned by any API, never sent to the client.
 
+### 4.1 Which service does what (post-migration)
+
+Authorization stayed in Next.js: it sets cookies and redirects a browser, neither of
+which the API service does. Refreshing moved to FastAPI, because the thing that actually
+executes an action lives there.
+
+- **Writer (Next.js):** `persistTokens` in `src/integrations/oauth.ts` is the *only*
+  thing that stores these tokens — on first connect and on a Next.js-side refresh.
+- **Reader (FastAPI):** `OAuthTokenService` in `apps/api/app/integrations/oauth.py`
+  refreshes-then-reads on the execution path, and re-persists in place.
+- **The AAD is a contract between them.** Both must bind ciphertext with exactly
+  `` `${userId}:${providerId}` `` — no namespace prefix, unlike the vault's `cred:` form.
+  A mismatch does not degrade gracefully: AES-GCM authentication fails outright, and the
+  natural `except` around a decrypt turns that into "not connected" for an integration
+  that is connected correctly. This shipped, and it is why the reader has explicit test
+  coverage of the sealed bytes (`tests/test_oauth_token_service.py`) rather than only of
+  its behaviour.
+- **A null `expiresAt` means the token does not expire** (Notion, Slack issue no refresh
+  token at all). It must not be read as "expired", which would push those providers into
+  a refresh path they cannot support.
+- A refresh response that omits `refresh_token` (Google always does) must leave the
+  stored one intact. Overwriting it with null converts a working account into one that
+  can never refresh again.
+- A network failure during refresh must **not** set `needsReauth` — a blip is not a
+  revoked grant, and flagging it sends the user to reconnect an account that was fine.
+
 ## 5. Execution pipeline
 
 `POST /api/action-items/:id/execute` runs these steps in order. Any failure
@@ -122,6 +148,42 @@ short-circuits and is recorded.
 
 Steps 11 and 12 share a single transaction, so an item can never be `EXECUTED`
 without its audit row.
+
+### 5.1 Attachments
+
+An EMAIL payload may carry `attachments`: entries of `{"kind": "brd", "documentId": "..."}`.
+They are resolved between the claim and the dispatch, in `services/attachments.py`, and the
+adapter receives **bytes, never ids** — adapters talk to providers and never touch the
+database, so the check that makes an id safe to read belongs on the executor's side of that
+line.
+
+- **Selection is explicit and never inferred.** Extraction can hear "send them the BRD" but
+  cannot know which stored document that is. Fuzzy-matching a spoken title against document
+  titles and auto-attaching the best guess is refused on the same principle as invented
+  action items: a plausible-looking wrong answer is worse than a blank, and here the wrong
+  answer is a disclosure rather than a typo. A person picks, in the edit form.
+- **Ownership is re-checked at execution, in the query's WHERE clause.** A `documentId`
+  arrives inside an editable payload, so it is untrusted input on the path to a read.
+  Filtering by `userId` in the lookup — rather than fetching and then comparing — means a
+  forged id reads as absent. No guardrail can substitute for this: a guardrail sees a
+  well-formed payload whichever document the id names.
+- **"Not found" and "not yours" are the same answer.** The distinction is only useful to
+  someone probing for ids.
+- **Anything unresolvable fails the execution.** An unknown `kind`, a missing id, or a
+  document with no content raises rather than being skipped. A silently dropped attachment
+  means an email that went out without the thing it was about, reported as a success.
+- **Resolution runs in mock mode too**, so a simulated run surfaces a broken attachment
+  instead of passing and failing later for real.
+- **The confirmation modal names the attachment count.** It is the last point at which a
+  human can notice the wrong document is about to leave.
+- **Bounded**: at most 10 attachments and 8 MB in total, refused before any read.
+
+Gmail assembles `multipart/mixed` only when attachments are present, keeping the plain
+single-part form otherwise so mail that needs no attachment does not change shape. The MIME
+boundary is derived from the content rather than randomly, because the idempotency key is
+computed from the payload and a replayed send must produce identical bytes. Base64 is
+wrapped at 76 characters (RFC 2045); Gmail rejects a single unwrapped multi-kilobyte line,
+which a real document easily exceeds.
 
 A `dryRun: true` request stops after step 8 and returns the preview, the risk
 assessment, and any warnings. It never changes `status`, never opens an

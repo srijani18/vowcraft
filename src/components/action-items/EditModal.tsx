@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button, Field, inputClass } from '@/components/ui/primitives'
 import { PAYLOAD_SCHEMA, type FieldSpec } from '@/domain/payload'
+import { apiFetch } from '@/lib/api-client'
 import type { ActionItemDTO } from '@/server/action-items/dto'
 
 /**
@@ -12,6 +13,11 @@ import type { ActionItemDTO } from '@/server/action-items/dto'
  * against (SPEC-001 §6.1), so the UI cannot offer a field the provider ignores
  * or omit one it requires.
  */
+
+type AttachmentEntry = { kind: string; documentId: string }
+
+/** Only what the picker needs from `/api/brd`'s summary list. */
+type DocumentOption = { id: string; title: string; requirementCount: number }
 
 type Draft = {
   description: string
@@ -71,6 +77,45 @@ export function EditModal({
     })
   }, [item])
 
+  /*
+   * Attachments are structured (`{kind, documentId}`), so they cannot live in `draft.payload`,
+   * which is a flat string map for form inputs. Held separately and merged back on submit.
+   */
+  const [attachments, setAttachments] = useState<AttachmentEntry[]>([])
+  const [documents, setDocuments] = useState<DocumentOption[] | null>(null)
+
+  useEffect(() => {
+    const existing = item?.payload?.attachments
+    setAttachments(
+      Array.isArray(existing)
+        ? existing.filter(
+            (entry): entry is AttachmentEntry =>
+              typeof entry === 'object' && entry !== null && 'documentId' in entry,
+          )
+        : [],
+    )
+  }, [item])
+
+  // Fetched only when a form that can carry attachments is actually open, so opening a
+  // calendar item costs nothing.
+  const wantsDocuments = (item?.actionType ?? '') === 'EMAIL'
+  useEffect(() => {
+    if (!item || !wantsDocuments || documents !== null) return
+    let cancelled = false
+    apiFetch('/api/brd')
+      .then((r) => r.json())
+      .then((data: { documents?: DocumentOption[] }) => {
+        if (!cancelled) setDocuments(data.documents ?? [])
+      })
+      .catch(() => {
+        // A failed list must not block editing everything else on the item.
+        if (!cancelled) setDocuments([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [item, wantsDocuments, documents])
+
   const specs = useMemo<readonly FieldSpec[]>(
     () => PAYLOAD_SCHEMA[(draft?.actionType ?? 'NONE') as keyof typeof PAYLOAD_SCHEMA] ?? [],
     [draft?.actionType],
@@ -86,11 +131,14 @@ export function EditModal({
     for (const spec of specs) {
       const raw = draft.payload[spec.key]?.trim() ?? ''
       if (!raw) continue
+      if (spec.kind === 'documents') continue // merged in below, from its own state
       if (spec.kind === 'emails') payload[spec.key] = raw.split(/[,;]/).map((s) => s.trim()).filter(Boolean)
       else if (spec.kind === 'number') payload[spec.key] = Number(raw)
       else if (spec.kind === 'datetime') payload[spec.key] = new Date(raw).toISOString()
       else payload[spec.key] = raw
     }
+    if (attachments.length > 0) payload.attachments = attachments
+
     // Carry through keys the schema does not describe (managerApproved, consent
     // flags) so an edit never silently drops state the rule engine reads.
     for (const [key, value] of Object.entries(item.payload)) {
@@ -202,13 +250,30 @@ export function EditModal({
             </legend>
             <div className="grid gap-4 sm:grid-cols-2">
               {specs.map((spec) => (
-                <div key={spec.key} className={spec.kind === 'text' ? 'sm:col-span-2' : undefined}>
+                <div
+                  key={spec.key}
+                  className={
+                    spec.kind === 'text' || spec.kind === 'documents' ? 'sm:col-span-2' : undefined
+                  }
+                >
                   <Field
                     label={spec.label}
                     required={spec.required}
                     hint={spec.help ?? (spec.kind === 'emails' ? 'Comma separated' : undefined)}
                   >
-                    {spec.kind === 'text' ? (
+                    {spec.kind === 'documents' ? (
+                      <DocumentPicker
+                        documents={documents}
+                        selected={attachments}
+                        onToggle={(documentId) =>
+                          setAttachments((current) =>
+                            current.some((a) => a.documentId === documentId)
+                              ? current.filter((a) => a.documentId !== documentId)
+                              : [...current, { kind: 'brd', documentId }],
+                          )
+                        }
+                      />
+                    ) : spec.kind === 'text' ? (
                       <textarea
                         rows={3}
                         value={draft.payload[spec.key] ?? ''}
@@ -261,5 +326,58 @@ export function EditModal({
         )}
       </div>
     </Modal>
+  )
+}
+
+/**
+ * Explicit selection, deliberately. Extraction can hear "send them the BRD" but cannot know
+ * which stored document that is, and this codebase's rule is that a plausible-looking wrong
+ * answer is worse than a blank — attaching the wrong requirements document to an outbound
+ * email is a disclosure, not a typo. So a spoken mention never becomes a selection; a person
+ * picks. The executor re-checks ownership of every id before reading anything.
+ */
+function DocumentPicker({
+  documents,
+  selected,
+  onToggle,
+}: {
+  documents: DocumentOption[] | null
+  selected: AttachmentEntry[]
+  onToggle(documentId: string): void
+}) {
+  if (documents === null) {
+    return <p className="text-xs text-ink-faint">Loading your documents…</p>
+  }
+  if (documents.length === 0) {
+    return (
+      <p className="text-xs text-ink-faint">
+        No requirements documents yet. Dictate one from the dashboard and it can be attached
+        here.
+      </p>
+    )
+  }
+  return (
+    <div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-edge/25 bg-base/60 p-2">
+      {documents.map((document) => {
+        const checked = selected.some((entry) => entry.documentId === document.id)
+        return (
+          <label
+            key={document.id}
+            className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-white/5"
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => onToggle(document.id)}
+              className="size-3.5 accent-[rgb(var(--accent-fill))]"
+            />
+            <span className="min-w-0 flex-1 truncate text-xs">{document.title}</span>
+            <span className="mono-num shrink-0 text-[10px] text-ink-faint">
+              {document.requirementCount} reqs
+            </span>
+          </label>
+        )
+      })}
+    </div>
   )
 }
