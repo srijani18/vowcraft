@@ -33,6 +33,7 @@ from app.api.routes import (
     search,
     settings as settings_routes,
     speech,
+    team,
     transcripts,
 )
 from app.core.config import get_settings
@@ -130,6 +131,7 @@ def create_app() -> FastAPI:
     app.include_router(search.router, prefix="/api/search", tags=["search"])
     app.include_router(profile.router, prefix="/api/profile", tags=["profile"])
     app.include_router(settings_routes.router, prefix="/api/settings", tags=["settings"])
+    app.include_router(team.router, prefix="/api/team", tags=["team"])
     return app
 
 

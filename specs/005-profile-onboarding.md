@@ -17,6 +17,7 @@ what the tool does before they are asked to approve something consequential.
 | `/dashboard/settings/profile` | Identity, password, danger zone (§4, §8) |
 | `/dashboard/settings/credentials` | BYOK vault (SPEC-004) |
 | `/dashboard/settings/integrations` | OAuth connections and their state |
+| `/dashboard/settings/team` | **Team roster** — the names actions resolve to addresses through (§4.2) |
 
 Preferences and identity are separate screens on purpose. Identity is about *who
 you are*; preferences are about *what the agent may do on your behalf* — a much
@@ -77,6 +78,42 @@ the only switch on the page that widens what the agent may do without asking, so
 it is rendered with its consequence spelled out and visually separated.
 `approvalThresholds` may only *tighten* the computed gate, never loosen it — the
 UI offers no option that would.
+
+### 4.2 Team roster — `/dashboard/settings/team`
+
+An address book, not an access list. A `TeamMember` row cannot sign in, and `email` is a
+plain column with no foreign key to `User`, because the people a meeting talks about mostly
+do not have accounts.
+
+Its purpose is to make an action *executable*. `_resolve_email` turns "send it to Priya"
+into `priya@acme.test`; without that resolution a calendar invite has no attendee and an
+email has no recipient. Secondarily, the roster's names are passed to the extraction prompt
+as known spellings, so one colleague stops arriving as three misheard people.
+
+| route | method | purpose |
+|---|---|---|
+| `/api/team` | GET | List, ordered by name, case-insensitively |
+| `/api/team` | POST | Add. `name` and `email` required, `role` optional |
+| `/api/team/{id}` | PATCH | Update any subset |
+| `/api/team/{id}` | DELETE | Remove |
+
+- **Per-account.** The unique constraint is `(userId, email)`, so two users may each hold
+  the same person. Treating the address as globally unique would let one user's address book
+  block another's.
+- **Ownership is in the WHERE clause**, so an id belonging to another account reads as 404
+  rather than being editable.
+- **Addresses are stored lower-cased**, because every comparison against them is
+  case-insensitive and normalising on write makes the stored value the comparable one.
+- **`email` is validated with `domain/payload.py`'s `is_valid_email`** — the same function
+  `VAL_EMAIL_FORMAT` uses — so an address cannot pass here and then block at execution.
+- **A `PATCH` distinguishes an absent `role` from an explicit null.** "Leave it alone" and
+  "clear it" are different requests, which a falsy check would collapse.
+
+Until this surface existed, rows were created only at signup (one, for yourself) and by the
+seed script — so the roster's whole purpose was unreachable for every name a meeting
+mentioned. That is also why `VAL_OWNER_KNOWN` was removed rather than kept: it warned about
+an unpopulated roster and told the user to "add them to the roster", a remedy no screen
+offered. See SPEC-003's note on the removal.
 
 ## 5. Provider routing
 
