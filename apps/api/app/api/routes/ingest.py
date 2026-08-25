@@ -28,6 +28,10 @@ router = APIRouter()
 class LiveUtterance(BaseModel):
     text: str = Field(min_length=1, max_length=5_000)
     atMs: int = Field(ge=0)
+    #: The provider's diarization index, forwarded from the relay. Optional because not
+    #: every provider diarizes, and bounded because it arrives from the browser: a wild
+    #: value would become a "Speaker 4000000" label rather than being rejected.
+    speaker: Optional[int] = Field(default=None, ge=0, le=99)
 
 
 class LiveCaptureBody(BaseModel):

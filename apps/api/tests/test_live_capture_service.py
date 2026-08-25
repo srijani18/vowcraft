@@ -121,3 +121,47 @@ class TestFinalizeLiveCapture:
         with patch("app.services.live_capture.start_extraction_and_embedding"):
             transcript = await _service_call(db_session, user.id, title="Sprint planning")
         assert transcript.title == "Sprint planning"
+
+
+class TestLiveDiarization:
+    """SPEC-011 for the live path. Deepgram diarizes on its streaming endpoint too, and the
+    relay forwards the index it reports — so a live meeting can attribute speech even though
+    the tab's audio is never stored. Segment labels are the *only* place a live capture's
+    speakers appear, since there are no words and no audio to fall back on."""
+
+    def test_a_provider_speaker_index_becomes_a_label_numbered_from_one(self):
+        segments = _segments_from_utterances(
+            [
+                {"text": "Shall we start?", "atMs": 1000, "speaker": 0},
+                {"text": "Yes, go ahead.", "atMs": 2000, "speaker": 1},
+            ]
+        )
+
+        assert [s["speakerLabel"] for s in segments] == ["Speaker 1", "Speaker 2"]
+
+    def test_speaker_zero_is_not_mistaken_for_absent(self):
+        """Deepgram numbers from 0, so a falsy check would drop the first speaker's every
+        attribution and label it None."""
+        segments = _segments_from_utterances([{"text": "Only me.", "atMs": 500, "speaker": 0}])
+
+        assert segments[0]["speakerLabel"] == "Speaker 1"
+
+    def test_no_speaker_stays_unattributed(self):
+        """A provider that does not diarize must not acquire invented labels — the reader
+        correctly says speakers were not separated."""
+        segments = _segments_from_utterances([{"text": "Something said.", "atMs": 500}])
+
+        assert segments[0]["speakerLabel"] is None
+
+    def test_a_speaker_switching_back_reuses_its_label(self):
+        """Attribution is per utterance, so an A-B-A exchange must not invent a third
+        speaker for the same person."""
+        segments = _segments_from_utterances(
+            [
+                {"text": "One.", "atMs": 1000, "speaker": 0},
+                {"text": "Two.", "atMs": 2000, "speaker": 1},
+                {"text": "Three.", "atMs": 3000, "speaker": 0},
+            ]
+        )
+
+        assert [s["speakerLabel"] for s in segments] == ["Speaker 1", "Speaker 2", "Speaker 1"]

@@ -344,6 +344,26 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         ],
       },
       {
+        slug: 'team',
+        label: 'Team roster',
+        href: '/dashboard/settings/team',
+        icon: 'bi-people',
+        status: 'live',
+        blurb: 'The people you mention in meetings, and the addresses they resolve to.',
+        detail:
+          'An address book, not an access list \u2014 a roster entry grants nothing and creates no ' +
+          'account. It is what turns a spoken name into an executable action: \u201csend it to ' +
+          'Priya\u201d has no recipient until Priya resolves to an address. It also feeds known ' +
+          'spellings to the extractor, so one colleague stops arriving as three misheard people.',
+        spec: 'SPEC-005 \u00a74.2',
+        highlights: [
+          'Name \u2192 email resolution, which is what makes an action executable',
+          'Known spellings passed to extraction, so names are not invented',
+          'Per-account: your roster is yours, not a shared directory',
+          'Nobody on it can sign in \u2014 it is not user management',
+        ],
+      },
+      {
         slug: 'profile',
         label: 'Profile',
         href: '/dashboard/settings/profile',

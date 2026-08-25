@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Badge, Button, EmptyState, GlassCard } from '@/components/ui/primitives'
+import { DeleteTranscript } from '@/components/transcripts/DeleteTranscript'
 import { RetryExtraction } from '@/components/transcripts/RetryExtraction'
 import { Uploader, type PipelineStatus } from '@/components/transcripts/Uploader'
 import { apiServerJson } from '@/lib/api-server'
@@ -202,6 +203,7 @@ export default async function TranscriptsPage() {
                         * config change and the retry is how the user confirms it worked.
                         */}
                       {t.extractError && t.counts.segments > 0 && <RetryExtraction transcriptId={t.id} />}
+                      <DeleteTranscript transcriptId={t.id} title={t.title} />
                     </div>
                   </div>
                 </GlassCard>

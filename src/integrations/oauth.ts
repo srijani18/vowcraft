@@ -4,7 +4,8 @@ import { decrypt, encrypt } from '@/lib/crypto'
 import { env } from '@/lib/env'
 import { logger } from '@/lib/logger'
 import { record } from '@/lib/audit'
-import type { IntegrationProvider, TokenSet } from './types'
+import { resolveCredential } from '@/lib/credentials/service'
+import type { IntegrationProvider, OAuthApp, ProviderId, TokenSet } from './types'
 import { ProviderError } from './types'
 
 /**
@@ -17,6 +18,68 @@ import { ProviderError } from './types'
 
 const REFRESH_SKEW_MS = 120_000
 
+/**
+ * Where each OAuth provider's *app* credentials come from — SPEC-002 §4, SPEC-004 §3.
+ *
+ * `vaultService` is the credential-vault service id whose `clientId`/`clientSecret`
+ * fields hold them, when one exists. Without this table the vault was write-only for
+ * OAuth apps: Settings → API keys stored a Google client id and secret, and the
+ * connect flow — reading only `process.env` — still reported "missing client id /
+ * secret", leaving no way to connect an integration short of editing `.env`.
+ */
+const OAUTH_APP_SOURCES: Partial<
+  Record<ProviderId, { vaultService?: string; clientIdEnv: string; clientSecretEnv: string }>
+> = {
+  google_calendar: {
+    vaultService: 'google',
+    clientIdEnv: 'GOOGLE_CLIENT_ID',
+    clientSecretEnv: 'GOOGLE_CLIENT_SECRET',
+  },
+  gmail: {
+    vaultService: 'google',
+    clientIdEnv: 'GOOGLE_CLIENT_ID',
+    clientSecretEnv: 'GOOGLE_CLIENT_SECRET',
+  },
+  notion: {
+    vaultService: 'notion_oauth',
+    clientIdEnv: 'NOTION_CLIENT_ID',
+    clientSecretEnv: 'NOTION_CLIENT_SECRET',
+  },
+  // Slack still has no vault entry for its OAuth app (its vault row holds a bot token,
+  // a different credential used at execute time), so it stays environment-only.
+  slack: { clientIdEnv: 'SLACK_CLIENT_ID', clientSecretEnv: 'SLACK_CLIENT_SECRET' },
+}
+
+/**
+ * The OAuth app credentials for one provider, vault first then environment — mirroring
+ * `resolveCredential`'s own precedence so "my own key" behaves the same here as
+ * everywhere else. Returns null when neither source has both halves.
+ */
+export async function resolveOAuthApp(
+  providerId: string,
+  userId: string,
+): Promise<OAuthApp | null> {
+  const source = OAUTH_APP_SOURCES[providerId as ProviderId]
+  if (!source) return null
+
+  if (source.vaultService) {
+    try {
+      const resolved = await resolveCredential(userId, source.vaultService)
+      const clientId = resolved.secrets.clientId?.trim()
+      const clientSecret = resolved.secrets.clientSecret?.trim()
+      if (clientId && clientSecret) return { clientId, clientSecret }
+    } catch (err) {
+      // A vault miss must not block the environment fallback below.
+      logger.warn('oauth.vault_app_lookup_failed', { provider: providerId, err })
+    }
+  }
+
+  const fromEnv = process.env as Record<string, string | undefined>
+  const clientId = fromEnv[source.clientIdEnv]?.trim()
+  const clientSecret = fromEnv[source.clientSecretEnv]?.trim()
+  return clientId && clientSecret ? { clientId, clientSecret } : null
+}
+
 // ───────────────────────────────────────────────────────── state + PKCE ──
 
 export interface StartedAuthorization {
@@ -28,7 +91,8 @@ export async function startAuthorization(
   provider: IntegrationProvider,
   userId: string,
 ): Promise<StartedAuthorization> {
-  if (!provider.isConfigured()) {
+  const app = await resolveOAuthApp(provider.id, userId)
+  if (!app) {
     throw new ProviderError({
       code: 'provider_unconfigured',
       message:
@@ -54,7 +118,7 @@ export async function startAuthorization(
     },
   })
 
-  return { url: provider.authorizeUrl(state, redirectUri, codeChallenge), state }
+  return { url: provider.authorizeUrl(state, redirectUri, codeChallenge, app), state }
 }
 
 /**
@@ -105,7 +169,14 @@ export async function completeAuthorization(
     })
   }
 
-  const tokens = await provider.exchangeCode(code, row.redirectUri, row.codeVerifier)
+  const app = await resolveOAuthApp(provider.id, row.userId)
+  if (!app) {
+    throw new ProviderError({
+      code: 'provider_unconfigured',
+      message: `${provider.displayName}'s OAuth app credentials are no longer available.`,
+    })
+  }
+  const tokens = await provider.exchangeCode(code, row.redirectUri, row.codeVerifier, app)
   await persistTokens(row.userId, provider.id, tokens)
 
   await record(db, {
@@ -191,8 +262,17 @@ export async function withFreshToken(
       })
     }
 
+    const app = await resolveOAuthApp(provider.id, userId)
+    if (!app) {
+      await markNeedsReauth(userId, provider.id, 'oauth_app_unconfigured')
+      throw new ProviderError({
+        code: 'reauth_required',
+        message: `${provider.displayName}'s OAuth app is no longer configured, so its access cannot be refreshed.`,
+      })
+    }
+
     try {
-      const refreshed = await provider.refresh(decrypt(account.refreshTokenEnc, key))
+      const refreshed = await provider.refresh(decrypt(account.refreshTokenEnc, key), app)
       await persistTokens(userId, provider.id, refreshed)
       logger.info('integration.token_refreshed', { provider: provider.id, userId })
       return refreshed.accessToken
@@ -249,7 +329,18 @@ export async function onUnauthorized(
       message: `${provider.displayName} needs to be reconnected.`,
     })
   }
-  const refreshed = await provider.refresh(decrypt(account.refreshTokenEnc, aad(userId, provider.id)))
+  const app = await resolveOAuthApp(provider.id, userId)
+  if (!app) {
+    await markNeedsReauth(userId, provider.id, 'oauth_app_unconfigured')
+    throw new ProviderError({
+      code: 'reauth_required',
+      message: `${provider.displayName}'s OAuth app is no longer configured.`,
+    })
+  }
+  const refreshed = await provider.refresh(
+    decrypt(account.refreshTokenEnc, aad(userId, provider.id)),
+    app,
+  )
   await persistTokens(userId, provider.id, refreshed)
   return refreshed.accessToken
 }

@@ -18,7 +18,7 @@ from app.domain.types import ActionType
 class FieldSpec:
     key: str
     label: str
-    kind: str  # string | text | datetime | number | emails | enum
+    kind: str  # string | text | datetime | number | emails | enum | documents
     required: bool
     min_items: Optional[int] = None
     options: Optional[tuple[str, ...]] = None
@@ -50,6 +50,15 @@ PAYLOAD_SCHEMA: dict[str, tuple[FieldSpec, ...]] = {
         FieldSpec(
             "sendMode", "Send mode", "enum", False, options=("draft", "send"),
             help="Drafts are LOW risk; sending externally is HIGH risk.",
+        ),
+        # Chosen explicitly, never inferred. Extraction can hear "send them the BRD" but
+        # cannot know *which* stored document that is, and attaching the wrong one to an
+        # outbound email is a disclosure, not a typo — so a spoken mention is not treated
+        # as a selection. Entries are `{"kind": "brd", "documentId": "..."}`; the executor
+        # resolves each one and re-checks ownership before anything is read.
+        FieldSpec(
+            "attachments", "Attachments", "documents", False,
+            help="Requirements documents to attach. Ownership is re-checked at execution.",
         ),
     ),
     "REMINDER": (

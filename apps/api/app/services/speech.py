@@ -52,6 +52,11 @@ class Utterance:
 
     text: str
     is_final: bool
+    #: Deepgram's diarization index for whoever spoke this, or None when the provider does
+    #: not diarize (WhisperLive) or has not decided yet. Deliberately the raw provider
+    #: integer rather than a "Speaker 1" string: labelling is a presentation choice made
+    #: once, where segments are built, rather than in three places along the way.
+    speaker: Optional[int] = None
 
 
 class SpeechProvider(Protocol):
@@ -106,6 +111,10 @@ class DeepgramProvider:
             "punctuate": "true",
             "smart_format": "true",
             "language": "multi",
+            # Live meetings are the case that needs this most — several people, and a
+            # transcript that attributes none of it. Deepgram diarizes on the streaming
+            # endpoint too, so the only thing that was missing was asking.
+            "diarize": "true",
         }
         # Container-wrapped audio (WebM/Opus from MediaRecorder) is auto-detected. Raw PCM
         # is not, and must declare itself or Deepgram silently returns nothing.
@@ -193,7 +202,20 @@ class DeepgramProvider:
                 text = (alt[0] or {}).get("transcript") or ""
                 if not text.strip():
                     continue
-                yield Utterance(text=text, is_final=bool(frame.get("is_final")))
+                # The speaker sits on the words, not the alternative, and a single
+                # utterance is speaker-contiguous in practice — so the first word that
+                # carries one answers for the frame. Absent on interim frames sometimes,
+                # which is why it stays Optional rather than defaulting to 0 (a real
+                # speaker index) and mislabelling everything as the first speaker.
+                words = (alt[0] or {}).get("words") or []
+                speaker = next(
+                    (w.get("speaker") for w in words if w.get("speaker") is not None), None
+                )
+                yield Utterance(
+                    text=text,
+                    is_final=bool(frame.get("is_final")),
+                    speaker=int(speaker) if speaker is not None else None,
+                )
         finally:
             pump.cancel()
             await upstream.close()

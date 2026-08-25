@@ -24,6 +24,21 @@ class ExecutionContext:
     idempotency_key: str
     access_token: Optional[str] = None
     api_key: Optional[str] = None
+    #: The provider's non-secret configuration from the credential vault — everything in
+    #: its resolved secrets except ``apiKey``, which already has its own field above.
+    #:
+    #: Exists because some providers need a *setting*, not just a credential, and it has to
+    #: be per-user rather than deployment-wide. Notion is the case that forced it: creating
+    #: a page requires a target database id, extraction cannot possibly know one, and the
+    #: adapter's own "set a default in Settings" error promised a field that did not exist
+    #: (the TypeScript read `NOTION_TASK_DATABASE_ID` from the environment, and that
+    #: fallback was dropped in the port — leaving Notion tasks impossible to execute).
+    provider_config: dict[str, str] = field(default_factory=dict)
+    #: Already-resolved attachment bytes, from `services/attachments.py`. Adapters receive
+    #: content, never ids: they talk to providers and never touch the database, and the
+    #: ownership check that makes an id safe to read belongs on the executor's side of that
+    #: line. Typed loosely to keep this module free of a service import.
+    attachments: list[Any] = field(default_factory=list)
 
 
 @dataclass

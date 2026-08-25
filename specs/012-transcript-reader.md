@@ -45,6 +45,26 @@ nav. The division of the shared prefix:
 - Clicking any word seeks to it. That is the primary interaction — more people will use
   it than the play button.
 
+### 3.0 When there is no audio at all
+
+Not every transcript has playable audio, so the player is conditional on the API's
+`hasAudio` flag rather than always rendered:
+
+- **A live capture never stores audio** (SPEC-013). The shared tab's stream is transcribed
+  as it happens and discarded; only segments are persisted. There is nothing to play, and
+  that is by design rather than a failure.
+- The reader previously fetched the audio regardless and reported *"Could not load the
+  audio"* — presenting an entirely expected condition as an error the user had to dismiss.
+  It now skips the request and replaces the player with a sentence explaining why, wording
+  it differently for a live capture (never recorded) than for an upload whose asset is gone.
+- **`hasAudio` is computed from the stored asset, not inferred from `sourceType`.** The two
+  can disagree: an upload whose asset was pruned is equally unplayable. The reader needs to
+  know whether a player can work, not how the words arrived.
+
+Everything else on the page — the transcript, search, speaker renaming, export, and deep
+links from an action item's citation — works unchanged without audio. Word-level
+highlighting is the only feature that depends on playback.
+
 ### 3.1 Why the highlight is imperative
 
 A 90-minute meeting is roughly 15,000 words, and `timeupdate` fires about four times a

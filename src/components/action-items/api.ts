@@ -55,6 +55,10 @@ export function patchItem(id: string, body: Record<string, unknown>): Promise<Ac
   })
 }
 
+export function deleteItem(id: string): Promise<{ ok: boolean }> {
+  return apiJson<{ ok: boolean }>(`/api/action-items/${id}`, { method: 'DELETE' })
+}
+
 export function bulkOp(ids: string[], op: 'approve' | 'reject' | 'defer') {
   return apiJson<{ okCount: number; failedCount: number; results: { id: string; ok: boolean; error?: string }[] }>(
     '/api/action-items/bulk',

@@ -31,7 +31,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from vowcraft_db import ActionItem, ExecutionAttempt, IntegrationAccount, Transcript, now_ms
 
@@ -45,9 +45,16 @@ from app.domain.action_item import compute_readiness
 from app.domain.payload import field_label
 from app.domain.risk import classify_risk, gate_satisfied
 from app.integrations.adapters import adapter_for
-from app.integrations.registry import provider_mode, resolve_provider
+from app.integrations.oauth import OAuthTokenService
+from app.integrations.registry import (
+    Provider,
+    planned_provider_for,
+    provider_mode,
+    resolve_provider,
+)
 from app.integrations.types import ExecutionContext, ProviderError
 from app.services.action_items import ActionItemService, evaluate, to_core
+from app.services.attachments import resolve_attachments
 from app.services.credentials import CredentialService
 
 #: Bump if the shape of `execution_result` (stored on the row and returned from
@@ -75,26 +82,14 @@ class ExecutorService:
         self.settings = settings
         self.audit = AuditRepository(session)
 
-    async def _access_token(self, user_id: str, provider_id: str) -> Optional[str]:
-        account = await self.session.scalar(
-            select(IntegrationAccount).where(
-                IntegrationAccount.user_id == user_id,
-                IntegrationAccount.provider == provider_id,
-            )
+    async def _access_token(self, user_id: str, provider: Provider) -> Optional[str]:
+        """A *fresh* token, refreshed if it is at or near expiry — see
+        app/integrations/oauth.py. Deliberately not a bare decrypt: Google issues one-hour
+        tokens, so decrypting whatever is stored meant live mode worked for an hour after
+        connecting and then failed until the user reconnected by hand."""
+        return await OAuthTokenService(self.session, self.settings).fresh_access_token(
+            user_id, provider
         )
-        if account is None or not account.access_token_enc or account.needs_reauth:
-            return None
-        try:
-            from app.core.crypto import decrypt as _decrypt
-
-            return _decrypt(
-                account.access_token_enc,
-                self.settings.APP_ENCRYPTION_KEY,
-                f"oauth:{user_id}:{provider_id}",
-            )
-        except Exception:  # noqa: BLE001 — an undecryptable token is a missing token
-            logger.error("execution.token_undecryptable", provider=provider_id, userId=user_id)
-            return None
 
     async def execute(
         self,
@@ -182,6 +177,17 @@ class ExecutorService:
         )
 
         if provider is None:
+            # A gated provider gets its own message: there is nothing to configure, so
+            # sending the reader to Settings would waste their time. `provider_gated` is
+            # also a distinct code, so the UI can present it as a product state rather
+            # than a misconfiguration.
+            gated = planned_provider_for(core.action_type)
+            if gated is not None:
+                raise unprocessable(
+                    "provider_gated",
+                    f"{gated.display_name} support is coming soon, so a "
+                    f"{core.action_type} action cannot be executed yet.",
+                )
             raise unprocessable(
                 "no_provider",
                 f"No integration is configured to handle a {core.action_type} action.",
@@ -323,51 +329,152 @@ class ExecutorService:
         await self.session.commit()
 
         # ── 10. dispatch with bounded retry
+        # Resolved once and read twice: an adapter may need the key *and* the non-secret
+        # settings alongside it (Notion's target database id), and resolving the same row
+        # twice would double the decrypt work for no benefit.
+        resolved_credential = (
+            await CredentialService(self.session, self.settings).resolve(
+                user_id, provider.credential_service
+            )
+            if mode == "live" and provider.credential_service
+            else None
+        )
         ctx = ExecutionContext(
             mode=mode, user_email=user_email,
             time_zone=inputs.settings.time_zone, request_id=request_id, idempotency_key=key,
-            access_token=await self._access_token(user_id, provider.id) if mode == "live" else None,
-            api_key=(
-                (await CredentialService(self.session, self.settings).resolve(
-                    user_id, provider.credential_service
-                )).api_key
-                if mode == "live" and provider.credential_service
-                else None
+            access_token=await self._access_token(user_id, provider) if mode == "live" else None,
+            api_key=resolved_credential.api_key if resolved_credential else None,
+            provider_config=(
+                {k: v for k, v in resolved_credential.secrets.items() if k != "apiKey" and v}
+                if resolved_credential
+                else {}
             ),
+            # Resolved here, not in the adapter: this is where `user_id` is in scope, and
+            # the ownership check is the only thing standing between an editable payload
+            # and another account's document. Mock mode resolves too, so a simulated run
+            # still surfaces a broken attachment rather than passing and failing later.
+            attachments=await resolve_attachments(self.session, user_id, payload),
         )
 
         started = now_ms()
         attempt_number = 0
 
+        # A manual retry after a FAILED execution is a second top-level call to `execute()`,
+        # not a continuation of `with_retry`'s in-process loop — which always starts counting
+        # from 1. Without this offset, the retry's first `dispatch()` reuses attempt_number 1
+        # under the same idempotency key as the failed attempt and hits ExecutionAttempt's
+        # unique constraint, crashing with an unhandled IntegrityError partway through a
+        # transaction that had already committed the EXECUTING transition — permanently
+        # stranding the item there, since that status refuses any further execute attempt.
+        already_attempted = await self.session.scalar(
+            select(func.max(ExecutionAttempt.attempt_number)).where(
+                ExecutionAttempt.action_item_id == item_id,
+                ExecutionAttempt.idempotency_key == key,
+            )
+        )
+        attempt_offset = already_attempted or 0
+
         async def dispatch(attempt: int):
             nonlocal attempt_number
-            attempt_number = attempt
+            attempt_number = attempt_offset + attempt
             # Every attempt is recorded before it runs, so a process that dies mid-dispatch
             # leaves a RUNNING row rather than no evidence at all.
             self.session.add(
                 ExecutionAttempt(
-                    action_item_id=item_id, idempotency_key=key, attempt_number=attempt,
+                    action_item_id=item_id, idempotency_key=key, attempt_number=attempt_number,
                     provider=provider.id, mode=mode, outcome="RUNNING",
                 )
             )
             await self.session.commit()
             return await adapter.execute(payload, ctx)
 
-        outcome = await with_retry(
-            dispatch,
-            is_retryable=lambda e: isinstance(e, ProviderError) and e.retryable,
-            retry_after_ms=lambda e: getattr(e, "retry_after_ms", None),
-            on_attempt=lambda attempt, delay, err: log.warn(
-                "execution.retrying", attempt=attempt, delayMs=delay,
-                code=getattr(err, "code", None), providerDetail=getattr(err, "detail", None),
-            ),
-        )
+        try:
+            outcome = await with_retry(
+                dispatch,
+                is_retryable=lambda e: isinstance(e, ProviderError) and e.retryable,
+                retry_after_ms=lambda e: getattr(e, "retry_after_ms", None),
+                on_attempt=lambda attempt, delay, err: log.warn(
+                    "execution.retrying", attempt=attempt, delayMs=delay,
+                    code=getattr(err, "code", None), providerDetail=getattr(err, "detail", None),
+                ),
+            )
 
-        finished = now_ms()
+            finished = now_ms()
 
-        # ── 11 + 12. record and audit, in ONE transaction
-        if outcome.ok:
-            result = outcome.value
+            # ── 11 + 12. record and audit, in ONE transaction
+            if outcome.ok:
+                result = outcome.value
+                await self.session.execute(
+                    update(ExecutionAttempt)
+                    .where(
+                        ExecutionAttempt.action_item_id == item_id,
+                        ExecutionAttempt.idempotency_key == key,
+                        ExecutionAttempt.attempt_number == attempt_number,
+                        ExecutionAttempt.outcome == "RUNNING",
+                    )
+                    .values(
+                        outcome="SUCCESS", external_id=result.external_id,
+                        external_url=result.external_url, finished_at=finished,
+                        duration_ms=outcome.attempts[-1].duration_ms,
+                    )
+                )
+                execution_result = {
+                    # A port of ExecutionResultJson from the original TypeScript executor —
+                    # every field here is read somewhere (a DTO field, a toast, the audit
+                    # trail's "what was sent" record), not speculative richness.
+                    "version": EXECUTION_RESULT_VERSION,
+                    "outcome": "SUCCESS",
+                    "provider": provider.id,
+                    "mode": mode,
+                    "externalId": result.external_id,
+                    "externalUrl": result.external_url,
+                    # One sentence for the success toast and a future replay — see the
+                    # ProviderResult docstring in app/integrations/types.py.
+                    "summary": result.summary,
+                    # The label that keeps mock mode honest.
+                    "simulated": result.simulated,
+                    "startedAt": started.replace(tzinfo=timezone.utc).isoformat(),
+                    "finishedAt": finished.replace(tzinfo=timezone.utc).isoformat(),
+                    "durationMs": sum(a.duration_ms for a in outcome.attempts),
+                    "attempts": _attempt_records(outcome.attempts),
+                    "warnings": warnings,
+                    "payloadUsed": payload,
+                    "error": None,
+                    "detail": result.detail,
+                }
+                await self.session.execute(
+                    update(ActionItem)
+                    .where(ActionItem.id == item_id)
+                    .values(
+                        status="EXECUTED", executed_at=finished, provider=provider.id,
+                        execution_result=execution_result,
+                        execution_attempts=ActionItem.execution_attempts + len(outcome.attempts),
+                    )
+                )
+                await self.audit.record(
+                    event="action_item.executed", actor_id=user_id, action_item_id=item_id,
+                    request_id=request_id,
+                    metadata={
+                        "provider": provider.id, "mode": mode, "externalId": result.external_id,
+                        "simulated": result.simulated, "attempts": len(outcome.attempts),
+                        "riskTier": risk.tier, "idempotencyKey": key,
+                    },
+                )
+                await self.session.commit()
+                log.info("execution.succeeded", provider=provider.id, mode=mode,
+                         attempts=len(outcome.attempts))
+                return {
+                    "ok": True, "replayed": False, "dryRun": False, "status": "EXECUTED",
+                    "idempotencyKey": key,
+                    "riskTier": risk.tier, "riskFactors": risk.factors, "approvalGate": gate.gate,
+                    "warnings": warnings,
+                    "result": execution_result,
+                }
+
+            # ── terminal failure
+            error = outcome.error
+            code = getattr(error, "code", "dispatch_failed")
+            message = getattr(error, "message", None) or "The provider could not complete the action."
             await self.session.execute(
                 update(ExecutionAttempt)
                 .where(
@@ -377,126 +484,95 @@ class ExecutorService:
                     ExecutionAttempt.outcome == "RUNNING",
                 )
                 .values(
-                    outcome="SUCCESS", external_id=result.external_id,
-                    external_url=result.external_url, finished_at=finished,
-                    duration_ms=outcome.attempts[-1].duration_ms,
+                    outcome="FAILED", error_code=code, error_message=message,
+                    finished_at=finished, duration_ms=outcome.attempts[-1].duration_ms,
                 )
             )
             execution_result = {
-                # A port of ExecutionResultJson from the original TypeScript executor —
-                # every field here is read somewhere (a DTO field, a toast, the audit
-                # trail's "what was sent" record), not speculative richness.
                 "version": EXECUTION_RESULT_VERSION,
-                "outcome": "SUCCESS",
+                "outcome": "FAILED",
                 "provider": provider.id,
                 "mode": mode,
-                "externalId": result.external_id,
-                "externalUrl": result.external_url,
-                # One sentence for the success toast and a future replay — see the
-                # ProviderResult docstring in app/integrations/types.py.
-                "summary": result.summary,
-                # The label that keeps mock mode honest.
-                "simulated": result.simulated,
+                "externalId": None,
+                "externalUrl": None,
+                "summary": message,
+                "simulated": mode == "mock",
                 "startedAt": started.replace(tzinfo=timezone.utc).isoformat(),
                 "finishedAt": finished.replace(tzinfo=timezone.utc).isoformat(),
                 "durationMs": sum(a.duration_ms for a in outcome.attempts),
                 "attempts": _attempt_records(outcome.attempts),
                 "warnings": warnings,
                 "payloadUsed": payload,
-                "error": None,
-                "detail": result.detail,
+                "error": {
+                    "code": code, "message": message,
+                    "retryable": getattr(error, "retryable", False),
+                    "uncertain": getattr(error, "uncertain", False),
+                },
             }
+            # FAILED, not back to APPROVED: the status records that a dispatch was attempted and
+            # did not succeed, which is different from never having tried. FAILED can retry.
             await self.session.execute(
                 update(ActionItem)
                 .where(ActionItem.id == item_id)
                 .values(
-                    status="EXECUTED", executed_at=finished, provider=provider.id,
-                    execution_result=execution_result,
+                    status="FAILED", execution_result=execution_result,
                     execution_attempts=ActionItem.execution_attempts + len(outcome.attempts),
                 )
             )
             await self.audit.record(
-                event="action_item.executed", actor_id=user_id, action_item_id=item_id,
+                event="action_item.execution_failed", actor_id=user_id, action_item_id=item_id,
                 request_id=request_id,
                 metadata={
-                    "provider": provider.id, "mode": mode, "externalId": result.external_id,
-                    "simulated": result.simulated, "attempts": len(outcome.attempts),
-                    "riskTier": risk.tier, "idempotencyKey": key,
+                    "provider": provider.id, "mode": mode, "errorCode": code,
+                    "attempts": len(outcome.attempts), "idempotencyKey": key,
+                    # The provider's own words, for the operator only.
+                    "providerDetail": getattr(error, "detail", None),
                 },
             )
             await self.session.commit()
-            log.info("execution.succeeded", provider=provider.id, mode=mode,
-                     attempts=len(outcome.attempts))
-            return {
-                "ok": True, "replayed": False, "dryRun": False, "status": "EXECUTED",
-                "idempotencyKey": key,
-                "riskTier": risk.tier, "riskFactors": risk.factors, "approvalGate": gate.gate,
-                "warnings": warnings,
-                "result": execution_result,
-            }
-
-        # ── terminal failure
-        error = outcome.error
-        code = getattr(error, "code", "dispatch_failed")
-        message = getattr(error, "message", None) or "The provider could not complete the action."
-        await self.session.execute(
-            update(ExecutionAttempt)
-            .where(
-                ExecutionAttempt.action_item_id == item_id,
-                ExecutionAttempt.idempotency_key == key,
-                ExecutionAttempt.attempt_number == attempt_number,
-                ExecutionAttempt.outcome == "RUNNING",
+            log.error("execution.failed", provider=provider.id, code=code,
+                      attempts=len(outcome.attempts))
+            raise AppError(
+                502, "execution_failed", message,
+                {"attempts": len(outcome.attempts), "provider": provider.id, "retryable": True},
             )
-            .values(
-                outcome="FAILED", error_code=code, error_message=message,
-                finished_at=finished, duration_ms=outcome.attempts[-1].duration_ms,
-            )
-        )
-        execution_result = {
-            "version": EXECUTION_RESULT_VERSION,
-            "outcome": "FAILED",
-            "provider": provider.id,
-            "mode": mode,
-            "externalId": None,
-            "externalUrl": None,
-            "summary": message,
-            "simulated": mode == "mock",
-            "startedAt": started.replace(tzinfo=timezone.utc).isoformat(),
-            "finishedAt": finished.replace(tzinfo=timezone.utc).isoformat(),
-            "durationMs": sum(a.duration_ms for a in outcome.attempts),
-            "attempts": _attempt_records(outcome.attempts),
-            "warnings": warnings,
-            "payloadUsed": payload,
-            "error": {
-                "code": code, "message": message,
-                "retryable": getattr(error, "retryable", False),
-                "uncertain": getattr(error, "uncertain", False),
-            },
-        }
-        # FAILED, not back to APPROVED: the status records that a dispatch was attempted and
-        # did not succeed, which is different from never having tried. FAILED can retry.
-        await self.session.execute(
-            update(ActionItem)
-            .where(ActionItem.id == item_id)
-            .values(
-                status="FAILED", execution_result=execution_result,
-                execution_attempts=ActionItem.execution_attempts + len(outcome.attempts),
-            )
-        )
-        await self.audit.record(
-            event="action_item.execution_failed", actor_id=user_id, action_item_id=item_id,
-            request_id=request_id,
-            metadata={
-                "provider": provider.id, "mode": mode, "errorCode": code,
-                "attempts": len(outcome.attempts), "idempotencyKey": key,
-                # The provider's own words, for the operator only.
-                "providerDetail": getattr(error, "detail", None),
-            },
-        )
-        await self.session.commit()
-        log.error("execution.failed", provider=provider.id, code=code,
-                  attempts=len(outcome.attempts))
-        raise AppError(
-            502, "execution_failed", message,
-            {"attempts": len(outcome.attempts), "provider": provider.id, "retryable": True},
-        )
+        except AppError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — see the comment below
+            # Anything unexpected here (a bug, a transient DB error, a future edge case)
+            # must not leave the row stuck at EXECUTING: that status refuses every future
+            # execute attempt, so an uncaught exception here would strand the item
+            # permanently with no path to retry. Roll back the broken transaction first —
+            # a failed flush leaves the session unusable until it is rolled back — then
+            # best-effort mark the item FAILED so a human can look and retry.
+            log.error("execution.unexpected_error", error=str(exc))
+            try:
+                await self.session.rollback()
+                await self.session.execute(
+                    update(ActionItem)
+                    .where(ActionItem.id == item_id, ActionItem.status == "EXECUTING")
+                    .values(
+                        status="FAILED",
+                        execution_result={
+                            "version": EXECUTION_RESULT_VERSION,
+                            "outcome": "FAILED",
+                            "provider": provider.id,
+                            "mode": mode,
+                            "externalId": None,
+                            "externalUrl": None,
+                            "summary": "An unexpected error interrupted this execution.",
+                            "simulated": mode == "mock",
+                            "startedAt": started.replace(tzinfo=timezone.utc).isoformat(),
+                            "error": {"code": "internal_error", "message": str(exc), "retryable": True, "uncertain": True},
+                        },
+                    )
+                )
+                await self.session.commit()
+            except Exception:  # noqa: BLE001 — recovery best-effort; the original error still surfaces
+                log.error("execution.recovery_failed")
+            raise AppError(
+                500, "execution_internal_error",
+                "An unexpected error interrupted this execution. It has been marked as failed "
+                "so you can retry.",
+                {},
+            ) from exc

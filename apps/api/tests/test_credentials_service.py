@@ -59,10 +59,31 @@ class TestCatalogCompleteness:
         modules = {spec.module for spec in CATALOG}
         assert modules == {"TRANSCRIPTION", "EXTRACTION", "TRANSLATION", "EMBEDDING", "INTEGRATION"}
 
-    def test_the_full_catalog_size_matches_the_original(self):
-        # src/lib/credentials/catalog.ts has 31 entries. A regression here means a
-        # service silently disappeared from the credentials page.
-        assert len(CATALOG) == 31
+    def test_the_catalog_matches_the_frontends_service_for_service(self):
+        """The two catalogues are the same contract in two languages, and a provider needs
+        an entry in both (the frontend renders the form; this side resolves and verifies
+        the key). This used to assert a hardcoded count of 31, which only caught a service
+        *disappearing* — it could not catch the actual failure mode, which is one catalogue
+        gaining an entry the other never hears about. Comparing the ids names the culprit.
+        """
+        import re
+        from pathlib import Path
+
+        ts_path = (
+            Path(__file__).resolve().parents[3] / "src" / "lib" / "credentials" / "catalog.ts"
+        )
+        assert ts_path.is_file(), f"frontend catalogue not found at {ts_path}"
+        # Only the `service:` key — `sharesKeyWith` and friends also hold service ids.
+        frontend = set(re.findall(r"^\s*service: '([^']+)'", ts_path.read_text(), re.MULTILINE))
+        backend = {spec.service for spec in CATALOG}
+
+        assert frontend, "parsed no services out of catalog.ts — the regex has drifted"
+        assert backend - frontend == set(), (
+            f"in this catalogue but not the frontend's: {sorted(backend - frontend)}"
+        )
+        assert frontend - backend == set(), (
+            f"in the frontend's catalogue but not this one: {sorted(frontend - backend)}"
+        )
 
     def test_a_previously_missing_translation_service_exists(self):
         assert find_service("deepl") is not None

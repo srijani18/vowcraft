@@ -68,29 +68,6 @@ export const VAL_EMAIL_FORMAT: Rule = {
   },
 }
 
-export const VAL_OWNER_KNOWN: Rule = {
-  id: 'VAL_OWNER_KNOWN',
-  appliesTo: [...ALL],
-  severity: 'WARN',
-  evaluate(ctx) {
-    const owner = ctx.item.ownerName?.trim()
-    if (!owner) return null // absence is readiness' problem, not this rule's
-    const known = ctx.teamMembers.some(
-      (m) =>
-        m.name.toLowerCase() === owner.toLowerCase() ||
-        m.email.toLowerCase() === ctx.item.ownerEmail?.toLowerCase(),
-    )
-    if (known) return null
-    return {
-      ruleId: 'VAL_OWNER_KNOWN',
-      severity: 'WARN',
-      field: 'ownerName',
-      message: `“${owner}” is not in your team roster, so this may be assigned to the wrong person.`,
-      remedy: 'Add them to the roster, or correct the owner.',
-    }
-  },
-}
-
 export const VAL_BUDGET_APPROVAL: Rule = {
   id: 'VAL_BUDGET_APPROVAL',
   appliesTo: [...ALL],
@@ -116,6 +93,5 @@ export const VALIDATION_RULES: readonly Rule[] = [
   VAL_REQUIRED_FIELDS,
   VAL_DEADLINE_PAST,
   VAL_EMAIL_FORMAT,
-  VAL_OWNER_KNOWN,
   VAL_BUDGET_APPROVAL,
 ]

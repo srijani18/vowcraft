@@ -13,6 +13,19 @@ export type ProviderId = 'google_calendar' | 'notion' | 'gmail' | 'slack' | 'sen
 export type AuthKind = 'oauth' | 'api_key'
 export type IntegrationMode = 'mock' | 'live'
 
+/**
+ * The OAuth *app's* own client credentials — distinct from a user's access token.
+ *
+ * Passed in rather than read from `env()` inside each adapter because these can also
+ * live in the credential vault (Settings → API keys), which is per-user and only
+ * readable asynchronously. An adapter that reached for `process.env` directly could
+ * not see a vault-stored app, which is exactly the bug this parameter fixes.
+ */
+export interface OAuthApp {
+  clientId: string
+  clientSecret: string
+}
+
 export interface TokenSet {
   accessToken: string
   refreshToken?: string
@@ -91,6 +104,13 @@ export interface IntegrationProvider<P = unknown, R = unknown> {
   scopes: string[]
   /** False when the OAuth app itself is unconfigured (no client id/secret). */
   isConfigured(): boolean
+  /**
+   * `'planned'` means built but deliberately not offered yet. Routing refuses to reach a
+   * planned provider — falling back to a *different* one would send via somewhere the
+   * reviewer never approved, and routing to it anyway would execute against a third party
+   * the product says is unavailable.
+   */
+  status?: 'live' | 'planned'
   /** Mutating providers that must not be retried after an uncertain failure. */
   idempotent: boolean
 
@@ -104,9 +124,14 @@ export interface IntegrationProvider<P = unknown, R = unknown> {
   validate(payload: unknown): P
   preview(payload: P, ctx: Pick<ExecutionContext, 'timeZone' | 'userEmail'>): ExecutionPreview
 
-  authorizeUrl(state: string, redirectUri: string, codeChallenge: string): string
-  exchangeCode(code: string, redirectUri: string, codeVerifier: string): Promise<TokenSet>
-  refresh(refreshToken: string): Promise<TokenSet>
+  authorizeUrl(state: string, redirectUri: string, codeChallenge: string, app: OAuthApp): string
+  exchangeCode(
+    code: string,
+    redirectUri: string,
+    codeVerifier: string,
+    app: OAuthApp,
+  ): Promise<TokenSet>
+  refresh(refreshToken: string, app: OAuthApp): Promise<TokenSet>
 
   execute(payload: P, ctx: ExecutionContext): Promise<ProviderResult<R>>
 }

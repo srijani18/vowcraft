@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 ACTION_TYPES = ("CALENDAR", "TASK", "EMAIL", "REMINDER", "NONE")
@@ -43,11 +43,19 @@ EXTRACTION_TOOL: dict[str, Any] = {
                         "sourceQuote": {"type": "string"},
                         "reasoning": {"type": ["string", "null"]},
                         "supersededByIndex": {"type": ["integer", "null"]},
+                        # EMAIL only — the message as it should actually be sent, drafted
+                        # by the model that just read the transcript (rule 8). Before these
+                        # existed the body was templated from the description plus the
+                        # source quote, which produced a note *about* an email ("Send an
+                        # email to Anjali… Context from the meeting: …") rather than an
+                        # email anyone would send.
+                        "emailSubject": {"type": ["string", "null"]},
+                        "emailBody": {"type": ["string", "null"]},
                     },
                     "required": [
                         "description", "actionType", "ownerName", "deadlineIso", "priority",
                         "confidence", "sourceTimestampMs", "sourceQuote", "reasoning",
-                        "supersededByIndex",
+                        "supersededByIndex", "emailSubject", "emailBody",
                     ],
                 },
             },
@@ -116,6 +124,16 @@ def validate_extraction(raw: Any) -> dict[str, Any]:
                 "supersededByIndex": (
                     int(item["supersededByIndex"])
                     if isinstance(item.get("supersededByIndex"), (int, float))
+                    else None
+                ),
+                "emailSubject": (
+                    (str(item["emailSubject"]).strip()[:200] or None)
+                    if item.get("emailSubject")
+                    else None
+                ),
+                "emailBody": (
+                    (str(item["emailBody"]).strip()[:5000] or None)
+                    if item.get("emailBody")
                     else None
                 ),
             }
@@ -225,7 +243,10 @@ def parse_deadline(iso: Optional[str], recorded_at: datetime) -> Optional[dateti
     # Ten years out is a hallucinated year, not a plan.
     if parsed > recorded_at + timedelta(days=10 * 365):
         return None
-    return parsed
+    # `deadline` is `timestamp without time zone` — asyncpg refuses an aware value outright,
+    # and merely stripping tzinfo (rather than converting first) would silently keep the
+    # wall-clock time of whatever offset the model or `recorded_at` used instead of UTC.
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 # ─────────────────────────────────────────────────────────── payload derivation ──
@@ -298,10 +319,17 @@ def derive_payload(
         return payload
 
     if action_type == "EMAIL":
+        # The model drafts the message itself (rule 8): it has the transcript and can tell
+        # what was actually being asked. The template below survives only as a fallback for
+        # a provider that returned nothing — it restates the action and quotes the meeting,
+        # which reads as a note *about* an email rather than one anybody would send.
+        drafted_subject = (action.get("emailSubject") or "").strip()
+        drafted_body = (action.get("emailBody") or "").strip()
         return {
             **({"to": others} if others else {}),
-            "subject": action["description"][:120],
-            "body": f"{action['description']}\n\nContext from the meeting:\n“{action['sourceQuote']}”\n",
+            "subject": (drafted_subject or action["description"])[:120],
+            "body": drafted_body
+            or f"{action['description']}\n\nContext from the meeting:\n“{action['sourceQuote']}”\n",
             # Always a draft. An extracted email is the last thing that should send
             # itself, and draft is the LOW-risk end of the scale (SPEC-003 §3).
             "sendMode": "draft",

@@ -71,10 +71,17 @@ Validation (all types):
 | id | severity | rule |
 |---|---|---|
 | `VAL_DEADLINE_PAST` | BLOCK | Deadline/dueAt not in the past. |
-| `VAL_OWNER_KNOWN` | WARN | Owner resolves to a `TeamMember`. |
 | `VAL_EMAIL_FORMAT` | BLOCK | Every recipient is a syntactically valid address. |
 | `VAL_REQUIRED_FIELDS` | BLOCK | Required payload fields present (SPEC-001 §6.1). |
 | `VAL_BUDGET_APPROVAL` | BLOCK | Money over the limit needs `managerApproved`. |
+
+> **Removed: `VAL_OWNER_KNOWN`** (WARN — owner resolves to a `TeamMember`). It warned when
+> an action's owner was not on the roster, and its remedy read "add them to the roster" — but
+> no surface for editing the roster was ever built, so the only roster entry most accounts
+> ever had was the one created for themselves at signup. The rule therefore fired on nearly
+> every real item, offering a fix the user could not perform. The roster itself remains: it
+> still grounds extraction with known spellings and resolves an owner name to the email
+> address that makes an action executable (`_resolve_email`). Only the warning is gone.
 
 Policy:
 

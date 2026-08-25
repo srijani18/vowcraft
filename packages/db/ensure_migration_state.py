@@ -17,6 +17,19 @@ This script tells them apart the same way a human would when debugging this by h
 missing but the schema's own tables are already there, the database is not unmigrated —
 it is unstamped. Stamp it, and let ``upgrade head`` do its normal, actually-idempotent
 thing immediately after.
+
+**It stamps the baseline, not head, and that distinction is the whole point.** Stamping
+head marks every migration as applied without running any of them, so a database that was
+recreated by Prisma silently misses everything added after the baseline. That shipped: a
+migration altering ``AuditLog``'s foreign key was stamped over and never ran, leaving the
+schema disagreeing with the models with no error anywhere to say so. Stamping the baseline
+— the revision Prisma's ``db push`` actually reproduces, since ``schema.prisma`` is the
+baseline's own snapshot — leaves ``upgrade head`` to replay each later migration for real.
+
+The invariant that makes this safe: **every migration after the baseline must be
+idempotent**, because this path will re-run it against a database Prisma has already
+shaped. Use ``IF NOT EXISTS`` / ``IF EXISTS``, or guard on a reflected check. A migration
+that fails on second run will block every container start.
 """
 
 from __future__ import annotations
@@ -27,6 +40,7 @@ import sys
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -63,13 +77,28 @@ def main() -> None:
     if "OAuthState" not in tables:
         return  # Genuinely a fresh database; `upgrade head` should create everything.
 
+    config = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+
+    # The base revision, read from the scripts rather than hardcoded, so adding or renaming
+    # migrations cannot leave a stale id here.
+    bases = ScriptDirectory.from_config(config).get_bases()
+    if len(bases) != 1:
+        # Multiple bases mean a branched history, where "the revision Prisma reproduces" is
+        # no longer a single answer. Refusing beats guessing: `upgrade head` will then fail
+        # loudly with its own message rather than this script stamping the wrong thing.
+        print(
+            f"→ expected exactly one base revision, found {len(bases)}; "
+            "leaving the database unstamped for `alembic upgrade head` to report"
+        )
+        return
+    baseline = bases[0]
+
     print(
         "→ alembic_version is missing but the schema already exists "
         "(a Prisma `db push` on the other service almost certainly dropped it) "
-        "— stamping the current revision instead of re-running its DDL"
+        f"— stamping the baseline ({baseline}) so `upgrade head` replays everything after it"
     )
-    config = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
-    command.stamp(config, "head")
+    command.stamp(config, baseline)
 
 
 if __name__ == "__main__":

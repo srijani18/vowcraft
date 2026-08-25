@@ -44,14 +44,29 @@ def _require(payload: dict[str, Any], action_type: str) -> list[str]:
     return missing_fields(action_type, payload)
 
 
-async def _post(url: str, *, token: Optional[str], json: dict, provider: str) -> dict:
+async def _request(
+    method: str,
+    url: str,
+    *,
+    token: Optional[str],
+    provider: str,
+    json: Optional[dict] = None,
+    extra_headers: Optional[dict[str, str]] = None,
+) -> dict:
+    """One transport for every adapter, so error classification is defined once.
+
+    ``extra_headers`` exists for providers that require a header beyond auth. Notion is the
+    case that forced it: it mandates ``Notion-Version`` on *every* request and answers
+    ``400 missing_version`` without one, so every Notion execution failed. The TypeScript
+    adapter always sent it; the port dropped it, and this helper had no way to pass it."""
+    headers: dict[str, str] = {}
+    if token:
+        headers["authorization"] = f"Bearer {token}"
+    if extra_headers:
+        headers.update(extra_headers)
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            response = await client.post(
-                url,
-                headers={"authorization": f"Bearer {token}"} if token else {},
-                json=json,
-            )
+            response = await client.request(method, url, headers=headers, json=json)
     except httpx.TimeoutException as exc:
         raise ProviderError(
             "timeout", f"{provider} did not respond in time.", retryable=True
@@ -75,6 +90,29 @@ async def _post(url: str, *, token: Optional[str], json: dict, provider: str) ->
             retry_after_ms=int(float(retry_after) * 1000) if retry_after and retry_after.isdigit() else None,
         )
     return response.json() if response.content else {}
+
+
+async def _post(
+    url: str,
+    *,
+    token: Optional[str],
+    json: dict,
+    provider: str,
+    extra_headers: Optional[dict[str, str]] = None,
+) -> dict:
+    return await _request(
+        "POST", url, token=token, provider=provider, json=json, extra_headers=extra_headers
+    )
+
+
+async def _get(
+    url: str,
+    *,
+    token: Optional[str],
+    provider: str,
+    extra_headers: Optional[dict[str, str]] = None,
+) -> dict:
+    return await _request("GET", url, token=token, provider=provider, extra_headers=extra_headers)
 
 
 class GoogleCalendarAdapter:
@@ -165,6 +203,30 @@ class GoogleCalendarAdapter:
         )
 
 
+#: Notion pins behaviour to a dated API version and requires it on every request. Kept
+#: identical to the TypeScript adapter's own constant and to the catalogue's `verify`
+#: recipe, so all three agree on which contract this code is written against.
+_NOTION_VERSION = "2022-06-28"
+
+#: Preference order for the column a due date is written to. A database may name it
+#: anything, so fall back to whichever date column exists rather than insisting on one
+#: spelling; `None` means the database has no date column and the due date is dropped.
+_NOTION_DUE_NAMES = ("due", "due date", "deadline", "date")
+
+
+def _first_date_property(properties: dict[str, Any]) -> Optional[str]:
+    dates = [name for name, spec in properties.items() if spec.get("type") == "date"]
+    if not dates:
+        return None
+    by_lower = {name.lower(): name for name in dates}
+    for candidate in _NOTION_DUE_NAMES:
+        if candidate in by_lower:
+            return by_lower[candidate]
+    # A single unambiguous date column is almost certainly the due date; several unnamed
+    # ones are a guess this code should not make silently, so take the first consistently.
+    return dates[0]
+
+
 class NotionAdapter:
     id = "notion"
     display_name = "Notion"
@@ -206,23 +268,106 @@ class NotionAdapter:
             raise ProviderError(
                 "not_connected", "Notion is not connected. Connect it in Settings → Integrations."
             )
-        database_id = read_string(payload.get("projectId"))
+        # The per-action id wins; the vault's `taskDatabaseId` is the default behind it.
+        # That default is the normal path, not the exception — extraction has no way to
+        # know a Notion database id, so `projectId` is essentially always absent.
+        database_id = read_string(payload.get("projectId")) or read_string(
+            ctx.provider_config.get("taskDatabaseId")
+        )
         if not database_id:
             raise ProviderError(
                 "missing_database",
-                "Notion needs a database id. Add it to the task, or set a default in Settings.",
+                "Notion needs a database id. Set the task database id on the Notion "
+                "workspace entry in Settings → API keys, or put one on this action.",
             )
+        # Read the database's own schema rather than assuming it matches a template.
+        # This used to hardcode "Name" and "Due", which fails on any real workspace: a
+        # Notion title property is named "Name" only by default and is routinely renamed,
+        # and a date column may simply not exist — which produced
+        # `validation_error: "Due is not a property that exists."` and no created page.
+        # Notion identifies properties by name in a write, so the names have to be
+        # discovered; matching on `type` is the only stable way to find them.
+        schema = await _get(
+            f"https://api.notion.com/v1/databases/{database_id}",
+            token=ctx.access_token, provider="Notion",
+            extra_headers={"Notion-Version": _NOTION_VERSION},
+        )
+        schema_properties: dict[str, Any] = schema.get("properties") or {}
+        title_property = next(
+            (name for name, spec in schema_properties.items() if spec.get("type") == "title"),
+            None,
+        )
+        if title_property is None:
+            # Every Notion database has exactly one title property, so this means the id
+            # points at something that is not a database (a plain page, most likely).
+            raise ProviderError(
+                "not_a_database",
+                "That Notion id does not look like a database. Check the task database id "
+                "in Settings → API keys — the id must come from a database URL, before the "
+                "'?'.",
+            )
+        date_property = _first_date_property(schema_properties)
+
         due = read_date(payload.get("dueAt"))
         properties: dict[str, Any] = {
-            "Name": {"title": [{"text": {"content": title or "Task"}}]}
+            title_property: {"title": [{"text": {"content": title or "Task"}}]}
         }
-        if due:
-            properties["Due"] = {"date": {"start": due.date().isoformat()}}
+        # A due date is dropped rather than fatal when the database has nowhere to put it:
+        # losing one field is a far better outcome than refusing to create the task at all.
+        if due and date_property:
+            properties[date_property] = {"date": {"start": due.date().isoformat()}}
         body = await _post(
             "https://api.notion.com/v1/pages", token=ctx.access_token, provider="Notion",
             json={"parent": {"database_id": database_id}, "properties": properties},
+            extra_headers={"Notion-Version": _NOTION_VERSION},
         )
         return ProviderResult(external_id=str(body.get("id") or ""), summary=summary, external_url=body.get("url"))
+
+
+def _multipart_message(headers: list[str], body: str, attachments: list[Any]) -> str:
+    """A `multipart/mixed` message carrying the body and each attachment.
+
+    Hand-rolled rather than via ``email.mime``: the surrounding code already produces a
+    header block and base64-urlsafe encodes the whole thing for Gmail's `raw` field, and
+    threading that through ``EmailMessage`` would mean two different assembly paths for the
+    same message. The boundary is derived from the content so the same inputs produce the
+    same bytes — the executor's idempotency key is computed from the payload, and a random
+    boundary would make a replayed send differ from the original for no reason.
+    """
+    import base64
+    import hashlib
+
+    digest = hashlib.sha256(
+        (body + "".join(getattr(a, "filename", "") for a in attachments)).encode("utf-8")
+    ).hexdigest()[:24]
+    boundary = f"==_vowcraft_{digest}"
+
+    parts = [
+        *headers,
+        "MIME-Version: 1.0",
+        f'Content-Type: multipart/mixed; boundary="{boundary}"',
+        "",
+        f"--{boundary}",
+        'Content-Type: text/plain; charset="utf-8"',
+        "Content-Transfer-Encoding: 7bit",
+        "",
+        body,
+    ]
+    for attachment in attachments:
+        encoded = base64.b64encode(attachment.content).decode()
+        # Wrapped at 76 characters: RFC 2045 caps a base64 line at 76, and Gmail rejects a
+        # single unwrapped multi-kilobyte line.
+        wrapped = "\r\n".join(encoded[i : i + 76] for i in range(0, len(encoded), 76))
+        parts += [
+            f"--{boundary}",
+            f'Content-Type: {attachment.mime_type}; charset="utf-8"; name="{attachment.filename}"',
+            "Content-Transfer-Encoding: base64",
+            f'Content-Disposition: attachment; filename="{attachment.filename}"',
+            "",
+            wrapped,
+        ]
+    parts.append(f"--{boundary}--")
+    return "\r\n".join(parts)
 
 
 class GmailAdapter:
@@ -253,6 +398,19 @@ class GmailAdapter:
             fields.append({"label": "Cc", "value": ", ".join(cc)})
         fields.append({"label": "Subject", "value": read_string(payload.get("subject")) or ""})
         fields.append({"label": "Body", "value": _truncate(body, 400)})
+        # Named in the preview because the confirmation modal is the last point at which a
+        # human can notice the wrong document is about to leave. `preview` has no database,
+        # so it reports the count and the ids the payload carries; the executor resolves the
+        # titles. A silent attachment would defeat the modal's purpose.
+        attachment_entries = payload.get("attachments")
+        if isinstance(attachment_entries, list) and attachment_entries:
+            fields.append(
+                {
+                    "label": "Attachments",
+                    "value": f"{len(attachment_entries)} document"
+                    f"{'' if len(attachment_entries) == 1 else 's'}",
+                }
+            )
         return {
             "provider": self.id,
             "consequence": (
@@ -276,7 +434,12 @@ class GmailAdapter:
         if ctx.mode == "mock":
             return ProviderResult(
                 external_id=_mock_id(self.id, ctx), summary=summary, simulated=True,
-                detail={"sendMode": send_mode, "to": to, "subject": subject},
+                detail={
+                    "sendMode": send_mode, "to": to, "subject": subject,
+                    # Attachments are resolved before dispatch even in mock mode, so a
+                    # simulated run reports what a real one would actually carry.
+                    "attachments": [getattr(a, "filename", "") for a in ctx.attachments],
+                },
             )
         if not ctx.access_token:
             raise ProviderError(
@@ -292,9 +455,17 @@ class GmailAdapter:
         cc = to_email_list(payload.get("cc"))
         if cc:
             headers.append(f"Cc: {', '.join(cc)}")
-        raw = base64.urlsafe_b64encode(
-            ("\r\n".join(headers) + "\r\n\r\n" + (read_string(payload.get("body")) or "")).encode()
-        ).decode().rstrip("=")
+        body_text = read_string(payload.get("body")) or ""
+
+        if ctx.attachments:
+            message = _multipart_message(headers, body_text, ctx.attachments)
+        else:
+            # Kept as the plain single-part form rather than always going multipart: a
+            # one-part MIME message is what every existing draft looks like, and changing
+            # the shape of mail that needs no attachment would be a gratuitous difference.
+            message = "\r\n".join(headers) + "\r\n\r\n" + body_text
+
+        raw = base64.urlsafe_b64encode(message.encode("utf-8")).decode().rstrip("=")
 
         # Drafts and sends are different endpoints, and the distinction is the difference
         # between LOW and HIGH risk. It is preserved exactly.
@@ -311,6 +482,31 @@ class GmailAdapter:
         return ProviderResult(
             external_id=str(body.get("id") or ""), summary=summary, detail={"sendMode": "draft"}
         )
+
+
+def _sendgrid_from(
+    payload: dict[str, Any], *, provider_config: Optional[dict[str, str]], user_email: str
+) -> str:
+    """The From address, in one place so preview and execute cannot drift apart again.
+
+    Order: an explicit `from` on the action, then the vault's `fromEmail`, then the
+    environment, then the user's own login as a last resort. That last fallback is almost
+    always wrong for SendGrid — it refuses any sender it has not verified — but failing with
+    SendGrid's own "does not match a verified Sender Identity" is more informative than
+    refusing to send with a message of our own invention.
+
+    `provider_config` is None on the preview path, which has no database access; the vault
+    tier is therefore only consulted at execution. The preview still shows the same answer
+    whenever the address comes from the action or the environment.
+    """
+    explicit = read_string(payload.get("from"))
+    if explicit:
+        return explicit
+    if provider_config:
+        configured = (provider_config.get("fromEmail") or "").strip()
+        if configured:
+            return configured
+    return (os.environ.get("SENDGRID_FROM_EMAIL") or "").strip() or user_email
 
 
 class SendGridAdapter:
@@ -337,7 +533,11 @@ class SendGridAdapter:
         cc = to_email_list(payload.get("cc"))
         bcc = to_email_list(payload.get("bcc"))
         recipients = to + cc + bcc
-        from_address = read_string(payload.get("from")) or os.environ.get("SENDGRID_FROM_EMAIL") or user_email
+        # Preview and execute must agree: the confirmation modal's entire promise is that it
+        # shows the payload the *same code path* will send. They disagreed — preview resolved
+        # this chain while execute hardcoded the user's login — so the modal named one sender
+        # and SendGrid was handed another (which it then refused, being unverified).
+        from_address = _sendgrid_from(payload, provider_config=None, user_email=user_email)
         body = read_string(payload.get("body")) or ""
         fields = [{"label": "From", "value": from_address}, {"label": "To", "value": ", ".join(to)}]
         if cc:
@@ -375,7 +575,11 @@ class SendGridAdapter:
             "https://api.sendgrid.com/v3/mail/send", token=ctx.api_key, provider="SendGrid",
             json={
                 "personalizations": [{"to": [{"email": a} for a in to]}],
-                "from": {"email": ctx.user_email},
+                "from": {
+                    "email": _sendgrid_from(
+                        payload, provider_config=ctx.provider_config, user_email=ctx.user_email
+                    )
+                },
                 "subject": subject,
                 "content": [{"type": "text/plain", "value": read_string(payload.get("body")) or ""}],
             },

@@ -47,6 +47,7 @@ export function ActionItemCard({
   onEdit,
   onExecute,
   onRunWorkflow,
+  onDelete,
 }: {
   item: ActionItemDTO
   busy: boolean
@@ -56,6 +57,7 @@ export function ActionItemCard({
   onEdit(): void
   onExecute(): void
   onRunWorkflow(): void
+  onDelete(): void
 }) {
   const [quoteOpen, setQuoteOpen] = useState(false)
   const executed = item.status === 'EXECUTED'
@@ -329,6 +331,20 @@ export function ActionItemCard({
               )}
             </>
           )}
+
+          {/* Ghost, not danger: this removes a row from a board, and the loud red is
+              reserved for Reject, which is a *decision* about the action rather than
+              housekeeping. The audit trail survives either way — `AuditLog.actionItemId`
+              is SET NULL, so what was proposed, approved and executed stays readable. */}
+          <Button
+            variant="ghost"
+            icon="bi-trash"
+            onClick={onDelete}
+            disabled={busy}
+            aria-label="Delete this action item"
+          >
+            Delete
+          </Button>
 
           {/* Execute stays visible but disabled with the reason, so the gate is
               legible rather than mysterious. */}

@@ -78,9 +78,9 @@ export const googleCalendar: IntegrationProvider<CalendarPayload, GoogleEvent> =
     return preview
   },
 
-  authorizeUrl(state, redirectUri, codeChallenge) {
+  authorizeUrl(state, redirectUri, codeChallenge, app) {
     const params = new URLSearchParams({
-      client_id: env().GOOGLE_CLIENT_ID ?? '',
+      client_id: app.clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
       scope: this.scopes.join(' '),
@@ -93,11 +93,11 @@ export const googleCalendar: IntegrationProvider<CalendarPayload, GoogleEvent> =
     return `${AUTH}?${params.toString()}`
   },
 
-  async exchangeCode(code, redirectUri, codeVerifier) {
+  async exchangeCode(code, redirectUri, codeVerifier, app) {
     const body = new URLSearchParams({
       code,
-      client_id: env().GOOGLE_CLIENT_ID ?? '',
-      client_secret: env().GOOGLE_CLIENT_SECRET ?? '',
+      client_id: app.clientId,
+      client_secret: app.clientSecret,
       redirect_uri: redirectUri,
       grant_type: 'authorization_code',
       code_verifier: codeVerifier,
@@ -116,11 +116,11 @@ export const googleCalendar: IntegrationProvider<CalendarPayload, GoogleEvent> =
     return toTokenSet(json)
   },
 
-  async refresh(refreshToken) {
+  async refresh(refreshToken, app) {
     const body = new URLSearchParams({
       refresh_token: refreshToken,
-      client_id: env().GOOGLE_CLIENT_ID ?? '',
-      client_secret: env().GOOGLE_CLIENT_SECRET ?? '',
+      client_id: app.clientId,
+      client_secret: app.clientSecret,
       grant_type: 'refresh_token',
     })
     const json = await providerFetch<{ access_token: string; expires_in?: number; scope?: string }>(

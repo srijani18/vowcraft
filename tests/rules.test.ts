@@ -176,24 +176,6 @@ describe('validation guardrails — SPEC-003 §4', () => {
     assert.ok(ids(result).includes('VAL_DEADLINE_PAST'))
   })
 
-  test('VAL_OWNER_KNOWN warns for someone off the roster, and does not block', () => {
-    const result = calendar(validCalendarPayload, {
-      item: item({ actionType: 'CALENDAR', ownerName: 'Stranger', ownerEmail: null, payload: validCalendarPayload }),
-    })
-    const violation = result.violations.find((v) => v.ruleId === 'VAL_OWNER_KNOWN')!
-    assert.equal(violation.severity, 'WARN')
-    assert.match(violation.message, /Stranger/)
-    assert.equal(result.passes, true)
-  })
-
-  test('VAL_OWNER_KNOWN stays quiet when there is no owner at all', () => {
-    // Absence is readiness' concern; this rule is about a *wrong* owner.
-    const result = calendar(validCalendarPayload, {
-      item: item({ actionType: 'CALENDAR', ownerName: null, payload: validCalendarPayload }),
-    })
-    assert.ok(!ids(result).includes('VAL_OWNER_KNOWN'))
-  })
-
   test('VAL_BUDGET_APPROVAL blocks big money until sign-off is recorded', () => {
     const described = item({
       actionType: 'TASK',

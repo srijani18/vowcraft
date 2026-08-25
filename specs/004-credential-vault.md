@@ -35,6 +35,38 @@ the UI next to the field, so precedence is never a surprise. Set
 `CREDENTIALS_ENV_LOCKED=true` to invert this and pin the environment as
 authoritative for a locked-down deployment.
 
+### 3.1 Shared keys, and disabling one
+
+Several providers cover more than one capability from a single account: one Groq key serves
+both `/audio/transcriptions` and `/chat/completions`, one OpenAI key serves audio, chat and
+embeddings. These are separate catalogue entries — genuinely different capabilities with
+different allowances — but a user who pastes the key once must not then be told the *other*
+module is unconfigured. `sharesKeyWith` links them, and resolution falls through to the
+sibling as a fourth tier, after the environment.
+
+`enabled` is what expresses **provider preference**. Resolution walks the catalogue in
+order, so turning one entry off promotes the next — and that is the only way to prefer a
+provider ranked below a configured one. Deepgram is the case that needs it: it is the only
+transcriber that diarizes, but Groq is free and therefore listed first, so "give me speaker
+labels" is said by switching Groq's transcription entry off. Toggling is a `PATCH`, not the
+`PUT` that saves a key: there is no read path for a stored secret, so flipping a flag must
+not mean pasting the key again.
+
+**Disabling a shared key hands each dependent its own copy first.** This is the subtle part,
+and it shipped wrong. `enabled` is a column on the *row*, and one row serves both entries —
+so disabling "Groq — Whisper" also disabled "Groq — Llama / Qwen" and silently broke
+action-item extraction. Someone following the documented route to diarization lost extraction
+as a side effect, with nothing to connect cause to effect. The convenience of not pasting
+twice had become a trap.
+
+So before the flag flips, the secret is copied into the row of every dependent that has none
+of its own (and that is not satisfied from the environment, which needs no copy). The
+dependent then resolves from its own row — checked *before* the sibling fallback — and the
+two are independent from that point on, so re-enabling the original does not re-couple them.
+An existing dependent row is never overwritten: it is already independent, and replacing it
+would discard a deliberate choice. The response reports what was copied and the UI says so,
+because duplicating a user's secret on their behalf is not something to discover later.
+
 ## 4. Encryption at rest
 
 - One `Credential` row stores **all fields for one service** as a single

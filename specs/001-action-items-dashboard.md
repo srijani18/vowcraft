@@ -159,6 +159,26 @@ Body: `{ "payloadOverride": {…}?, "dryRun": boolean?, "idempotencyKey": string
 Behaviour in SPEC-002 §5. Returns `200` with the execution result on success,
 `409 approval_required` / `422 guardrail_blocked` / `502 provider_error`.
 
+### `DELETE /api/action-items/:id`
+
+Removes one item from the board. Returns `{ "ok": true }`.
+
+- **The audit trail survives.** `AuditLog.actionItemId` is `SET NULL`, so what was
+  proposed, approved and executed stays readable with the reference detached. It was
+  `CASCADE` until this endpoint existed, which would have made one click erase the record —
+  see the note in SPEC-003 and `AuditLog`'s model docstring.
+- **`EXECUTED` items may be deleted.** What the action did in the world already happened
+  and the audit keeps the record; refusing would leave a board that can never be tidied.
+  Deleting does not undo the side effect, and the confirmation says so.
+- **`EXECUTING` items may not** → `409 execution_in_progress`. A dispatch is in flight
+  against a third party, and removing the row leaves its result nowhere to be recorded.
+- **Dependents are not cascaded.** `dependsOnId` and `supersededById` are both `SET NULL`,
+  so deleting a blocker loosens the chain rather than silently deleting items nobody
+  selected. The board refetches afterwards, because loosening a dependency changes whether
+  *other* cards are executable.
+- Another user's id answers `404`, not `403` — a `403` confirms the row exists, turning
+  id-guessing into an enumeration oracle (the same reasoning as `GET`).
+
 ### `POST /api/action-items/bulk`
 `{ "ids": string[], "op": "approve" | "reject" | "defer" }` — max 100 ids.
 Per-item outcomes returned; partial success is normal and reported as such

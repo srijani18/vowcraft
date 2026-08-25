@@ -81,12 +81,27 @@ class TranscriptionProvider:
     credential_service: str
     free_tier: bool
     max_bytes: int = 25 * 1024 * 1024
+    #: "openai" speaks the /audio/transcriptions multipart form; "deepgram" has its own
+    #: wire format *and* is the only implemented provider that returns speaker labels.
+    #: Mirrors the same split in services/llm.py rather than inventing a new pattern.
+    kind: str = "openai"
+    #: Whether this provider can attribute speech to speakers at all. Whisper cannot, and
+    #: the difference is user-visible: the reader shows "speakers were not separated".
+    diarizes: bool = False
 
 
 PROVIDERS: tuple[TranscriptionProvider, ...] = (
     TranscriptionProvider(
         "groq", "Groq (Whisper large-v3 turbo)", "https://api.groq.com/openai/v1",
         "whisper-large-v3-turbo", "groq", True,
+    ),
+    # Ahead of OpenAI deliberately: it is the only implemented provider that diarizes, and
+    # its catalogue entry has always advertised that ("built-in diarization"). Someone who
+    # adds a Deepgram key has asked for speaker separation; falling through to Whisper
+    # would silently give them the one thing Whisper cannot do.
+    TranscriptionProvider(
+        "deepgram", "Deepgram Nova", "https://api.deepgram.com/v1",
+        "nova-3", "deepgram", False, kind="deepgram", diarizes=True,
     ),
     TranscriptionProvider(
         "openai_audio", "OpenAI (Whisper)", "https://api.openai.com/v1",
@@ -221,6 +236,128 @@ async def transcription_status(user_id: str, credentials: CredentialService) -> 
     }
 
 
+async def _transcribe_deepgram(
+    provider: TranscriptionProvider,
+    *,
+    data: bytes,
+    mime_type: str,
+    api_key: str,
+    language: Optional[str] = None,
+) -> dict[str, Any]:
+    """Deepgram's prerecorded API — the only implemented provider that diarizes.
+
+    Three differences from the OpenAI-compatible path, all forced by Deepgram's own shape:
+    the audio is the raw request body rather than a multipart field, the key goes in an
+    ``Authorization: Token`` header rather than ``Bearer``, and everything that would be a
+    form field is a query parameter.
+
+    ``utterances=true`` is what makes this worth having. Deepgram returns word-level
+    ``speaker`` integers regardless, but utterances are already grouped into
+    speaker-contiguous runs — which is exactly the segment shape the reader and the Word
+    table are built around. Grouping the words by hand would reimplement that, worse.
+    """
+    params: dict[str, str] = {
+        "model": provider.model,
+        "diarize": "true",
+        "utterances": "true",
+        "punctuate": "true",
+        "smart_format": "true",
+    }
+    if language:
+        params["language"] = language
+    else:
+        # Only with a multi-language model; asking for detection is how `language` in the
+        # response becomes meaningful rather than echoing a default.
+        params["detect_language"] = "true"
+
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+            response = await client.post(
+                f"{provider.base_url}/listen",
+                params=params,
+                headers={
+                    "authorization": f"Token {api_key}",
+                    "content-type": mime_type or "application/octet-stream",
+                },
+                content=data,
+            )
+    except httpx.TimeoutException as exc:
+        raise TranscriptionError(
+            "timeout", f"{provider.display_name} did not finish within 10 minutes.", True
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise TranscriptionError(
+            "network_error", f"{provider.display_name} was unreachable.", True
+        ) from exc
+
+    if response.status_code >= 400:
+        raise TranscriptionError(
+            f"{provider.id}_http_{response.status_code}",
+            (
+                f"{provider.display_name} rejected the API key. Check it in Settings → API keys."
+                if response.status_code in (401, 403)
+                else f"{provider.display_name} rate limit reached. Try again shortly."
+                if response.status_code == 429
+                else f"{provider.display_name} returned {response.status_code}."
+            ),
+            response.status_code in (408, 429, 500, 502, 503, 504),
+        )
+
+    body = response.json()
+    results = body.get("results") or {}
+    metadata = body.get("metadata") or {}
+
+    segments: list[dict[str, Any]] = []
+    for utterance in results.get("utterances") or []:
+        text = (utterance.get("transcript") or "").strip()
+        if not text:
+            continue
+        # Deepgram numbers speakers from 0; the rest of this system labels them from 1, the
+        # same convention the bundled sample and the reader's rename control use.
+        speaker = utterance.get("speaker")
+        segments.append(
+            {
+                "startMs": _sec_to_ms(utterance.get("start")),
+                "endMs": _sec_to_ms(utterance.get("end")),
+                "text": text,
+                "speakerLabel": f"Speaker {int(speaker) + 1}" if speaker is not None else None,
+                "words": [
+                    {
+                        "text": (w.get("punctuated_word") or w.get("word") or "").strip(),
+                        "startMs": _sec_to_ms(w.get("start")),
+                        "endMs": _sec_to_ms(w.get("end")),
+                        "confidence": w.get("confidence"),
+                    }
+                    for w in (utterance.get("words") or [])
+                    if (w.get("punctuated_word") or w.get("word") or "").strip()
+                ],
+            }
+        )
+
+    if not segments:
+        raise TranscriptionError(
+            "empty_transcript",
+            "The provider returned no speech. The recording may be silent or too quiet.",
+        )
+
+    channels = results.get("channels") or [{}]
+    alternatives = (channels[0].get("alternatives") or [{}])[0]
+    return {
+        "language": normalise_language(
+            channels[0].get("detected_language") or alternatives.get("language") or language
+        ),
+        "durationMs": _sec_to_ms(metadata.get("duration")) or segments[-1]["endMs"],
+        "segments": segments,
+        # Honest per response, not per provider: `diarize=true` was requested, but a
+        # single-speaker recording legitimately comes back with one label, and claiming
+        # diarization when every segment shares a speaker would be a distinction without
+        # a difference to the reader.
+        "diarized": len({s["speakerLabel"] for s in segments if s["speakerLabel"]}) > 1,
+        "provider": provider.id,
+        "model": provider.model,
+    }
+
+
 async def transcribe(
     provider: TranscriptionProvider,
     *,
@@ -230,6 +367,11 @@ async def transcribe(
     api_key: str,
     language: Optional[str] = None,
 ) -> dict[str, Any]:
+    if provider.kind == "deepgram":
+        return await _transcribe_deepgram(
+            provider, data=data, mime_type=mime_type, api_key=api_key, language=language
+        )
+
     files = {"file": (filename, data, mime_type)}
     form = {
         "model": provider.model,

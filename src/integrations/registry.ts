@@ -43,7 +43,9 @@ const DEFAULT_BY_CAPABILITY: Partial<Record<ActionType, ProviderId>> = {
 export function providersFor(actionType: ActionType): IntegrationProvider[] {
   const fallback = DEFAULT_BY_CAPABILITY[actionType]
   return allProviders()
-    .filter((p) => p.capability === actionType)
+    // Gated providers are excluded so the routing picker cannot offer a route that
+    // resolution will then refuse. Mirrors `providers_for` in the Python registry.
+    .filter((p) => p.capability === actionType && (p.status ?? 'live') === 'live')
     .sort((a, b) => (a.id === fallback ? -1 : b.id === fallback ? 1 : 0))
 }
 
@@ -76,11 +78,18 @@ export function resolveProvider(
   if (override) {
     const provider = getProvider(override)
     // An override naming a provider that cannot serve this action type is a
-    // misconfiguration; fall through to the default rather than mis-executing.
-    if (provider && provider.capability === actionType) return provider
+    // misconfiguration; fall through to the default rather than mis-executing. A *gated*
+    // override falls through too — a stored preference must not resurrect a withdrawn
+    // provider.
+    if (provider && provider.capability === actionType && (provider.status ?? 'live') === 'live') {
+      return provider
+    }
   }
   const fallback = DEFAULT_BY_CAPABILITY[actionType]
-  return fallback ? (REGISTRY[fallback] ?? null) : null
+  const candidate = fallback ? (REGISTRY[fallback] ?? null) : null
+  // Null rather than the next provider with this capability: falling through would send
+  // via somewhere the reviewer never approved.
+  return candidate && (candidate.status ?? 'live') === 'live' ? candidate : null
 }
 
 export function providerMode(id: ProviderId): IntegrationMode {
@@ -96,6 +105,8 @@ export interface ProviderStatus {
   mode: IntegrationMode
   /** Whether the deployment-wide credentials exist. Live mode needs them. */
   configured: boolean
+  /** 'planned' renders as coming-soon instead of a Connect button. */
+  status: 'live' | 'planned'
 }
 
 export function providerStatuses(): ProviderStatus[] {
@@ -107,5 +118,6 @@ export function providerStatuses(): ProviderStatus[] {
     credentialService: p.credentialService ?? null,
     mode: providerMode(p.id),
     configured: p.isConfigured(),
+    status: p.status ?? 'live',
   }))
 }

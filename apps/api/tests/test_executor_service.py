@@ -12,6 +12,9 @@ that.
 
 from __future__ import annotations
 
+import pytest
+
+from app.core.exceptions import AppError
 from app.services.executor import ExecutorService
 
 CALENDAR_PAYLOAD = {
@@ -76,11 +79,10 @@ class TestDryRunPreview:
                 {"to": ["a@acme.test"], "subject": "Hi", "body": "Body text", "sendMode": "draft"},
                 "gmail",
             ),
-            (
-                "REMINDER",
-                {"message": "Ping the team", "channel": "self", "remindAt": "2026-09-01T04:30:00.000Z"},
-                "slack",
-            ),
+            # REMINDER is deliberately absent: Slack is its only provider and Slack is
+            # gated, so there is nothing to preview. Covered by
+            # `test_a_gated_capability_is_refused_rather_than_previewed` below — previewing
+            # an execution the product will not perform would be a tease.
         ]
         user = await make_user()
         transcript = await make_transcript(user)
@@ -93,6 +95,30 @@ class TestDryRunPreview:
             outcome = await service.execute(user.id, user.email, row.id, dry_run=True, request_id="req-1")
             assert outcome["preview"]["provider"] == expected_provider, action_type
             assert outcome["preview"]["fields"], action_type
+
+    async def test_a_gated_capability_is_refused_rather_than_previewed(
+        self, make_user, make_transcript, make_row, db_session, api_settings
+    ):
+        """Slack is built but withheld, and it is REMINDER's only provider — so a reminder
+        cannot execute. The refusal names the reason as a product state (`provider_gated`)
+        rather than a misconfiguration: there is nothing here for the reviewer to fix, and
+        "no integration is configured" would send them to a settings page to fix it."""
+        user = await make_user()
+        transcript = await make_transcript(user)
+        row = await make_row(
+            transcript, action_type="REMINDER", status="APPROVED",
+            owner_name="Priya Raman",
+            payload={"message": "Ping the team", "channel": "self",
+                     "remindAt": "2026-09-01T04:30:00.000Z"},
+        )
+
+        with pytest.raises(AppError) as excinfo:
+            await _service(db_session, api_settings).execute(
+                user.id, user.email, row.id, dry_run=True, request_id="req-1"
+            )
+
+        assert excinfo.value.code == "provider_gated"
+        assert "coming soon" in excinfo.value.message.lower()
 
 
 class TestSuccessfulExecution:

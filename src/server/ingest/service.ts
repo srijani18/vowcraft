@@ -46,4 +46,13 @@ export interface TranscriptDetail extends TranscriptSummary {
   }[]
   /** Every speaker on this transcript, for the rename control. */
   speakers: { id: string; label: string; displayName: string | null }[]
+  /**
+   * Whether a stored audio asset exists, so the reader knows a player can work.
+   *
+   * Reported by the API from the asset itself rather than derived from `sourceType`: a live
+   * capture (SPEC-013) keeps only segments — the shared tab's audio is never persisted — but
+   * an upload whose asset was pruned is equally unplayable. The reader needs "can this
+   * play", not "how did the words arrive".
+   */
+  hasAudio: boolean
 }

@@ -50,6 +50,10 @@ export const sendgrid: IntegrationProvider<SendGridPayload, SendGridResult> = {
   id: 'sendgrid',
   displayName: 'SendGrid',
   capability: 'EMAIL',
+  // Built and tested, but not part of what the product currently offers. Routing
+  // refuses to reach it — see `resolveProvider`.
+  status: 'planned' as const,
+
   auth: 'api_key',
   credentialService: 'sendgrid',
   scopes: [],

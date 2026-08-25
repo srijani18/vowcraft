@@ -1,6 +1,6 @@
 """The guardrail engine — a port of ``src/domain/rules/``.
 
-17 rules in three families: scheduling (7), validation (5), policy (5). Every rule is a
+16 rules in three families: scheduling (7), validation (4), policy (5). Every rule is a
 pure function of ``RuleContext``, which is what lets them be tested against a fixed instant
 with no database and no clock.
 
