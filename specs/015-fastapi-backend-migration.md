@@ -18,7 +18,7 @@ Three things make this a migration rather than a rewrite:
 - **Security-critical behaviour ports byte-for-byte.** Password hashes and encrypted BYOK
   secrets written by the Node implementation must decrypt under the Python one, or every
   existing account and every stored key breaks on cutover.
-- **Guardrail and risk logic ports behaviourally.** The 17 rules, the risk classifier and the
+- **Guardrail and risk logic ports behaviourally.** The 16 rules, the risk classifier and the
   approval gate must produce the *same verdicts*, not merely similar ones — a guardrail that
   disagrees with its own prior behaviour is a guardrail nobody can trust.
 
@@ -88,10 +88,30 @@ from scratch — "already exists" on the first `CREATE TABLE`.
 `packages/db/ensure_migration_state.py` runs immediately before `alembic upgrade head` in
 `docker/api-entrypoint.sh` and tells the two cases apart the same way debugging this by hand
 does: if `alembic_version` is missing but the schema's own tables already exist, the database
-is not unmigrated, it is unstamped — so it stamps the current revision and lets `upgrade head`
-proceed as the normal no-op immediately after. Verified by deliberately reproducing the
-trigger (`docker compose restart web` between two `api` restarts) and confirming `api` starts
-clean rather than crash-looping.
+is not unmigrated, it is unstamped — so it stamps the **baseline** and lets `upgrade head`
+replay every migration after it. Verified by deliberately reproducing the trigger
+(`docker compose restart web` between two `api` restarts) and confirming `api` starts clean
+rather than crash-looping.
+
+**It stamps the baseline, not head.** The first version stamped `head`, which marks every
+migration as applied without running any of them — so a database Prisma had recreated
+silently missed everything added after the baseline. That shipped and bit: the migration
+altering `AuditLog`'s foreign key (so an audit trail survives deleting an action item) was
+stamped over and never ran, leaving the schema disagreeing with the models and no error
+anywhere to say so. The baseline is the right revision to stamp because `schema.prisma` *is*
+the baseline's snapshot — it is precisely the state a `db push` reproduces.
+
+This makes one invariant load-bearing: **every migration after the baseline must be
+idempotent**, since this path re-runs it against a database Prisma has already shaped. Use
+`IF NOT EXISTS` / `IF EXISTS`, or guard on a reflected check — and guard *per object*, not
+per migration. `add_segment_embeddings` is the cautionary case: `schema.prisma` carries a
+shadow `SegmentEmbedding` model (SPEC-021 §4), so a push can create the table while being
+unable to express its HNSW index at all. A single "table exists, skip everything" guard
+would leave semantic search on a sequential scan — correct results, quietly terrible
+latency. A migration that fails on a second run blocks every container start.
+
+Verified by reverting the foreign key by hand, dropping `alembic_version`, and restarting
+`api`: all three post-baseline migrations replayed and the schema was repaired.
 
 ## 4. Security compatibility
 
