@@ -24,10 +24,13 @@ class AuditLog(Base):
 
     * ``actorId`` is ``SET NULL`` — deleting a user must not erase the record of what
       they did.
-    * ``actionItemId`` is ``CASCADE`` — deleting an action item *does* remove its audit
-      rows. Worth knowing rather than assuming: an audit trail that cascades is weaker
-      than one that does not, and if that is ever tightened it is a schema change with a
-      data-retention argument behind it, not a quiet edit here.
+    * ``actionItemId`` is ``SET NULL`` — deleting an action item detaches its audit rows
+      and keeps them. This was ``CASCADE`` until action items became deletable from the
+      UI: an audit trail that cascades is weaker than one that does not, and a delete
+      button turned that from a latent inconsistency into a single click that erased the
+      record of what had been proposed, approved and executed. The row survives with a
+      null ``actionItemId``; ``event``, ``before``/``after``, ``metadata`` and ``at`` are
+      all still readable.
     """
 
     __tablename__ = "AuditLog"
@@ -43,7 +46,7 @@ class AuditLog(Base):
     # Dotted and past tense: `action_item.executed`, `brd.revised`.
     event: Mapped[str] = mapped_column(Text, nullable=False)
     action_item_id: Mapped[Optional[str]] = mapped_column(
-        "actionItemId", Text, ForeignKey("ActionItem.id", ondelete="CASCADE", onupdate="CASCADE"), nullable=True
+        "actionItemId", Text, ForeignKey("ActionItem.id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True
     )
     before: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     after: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
