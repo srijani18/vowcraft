@@ -72,8 +72,10 @@ export async function signup(
         // Settings exist from the first request, so the guardrail engine always has
         // a real envelope to read rather than silently falling back to defaults.
         settings: { create: {} },
-        // The owner is their own first team member, which makes VAL_OWNER_KNOWN
-        // meaningful immediately instead of warning on every item.
+        // The owner is their own first team member, so an action assigned to them
+        // resolves to a real email address (`_resolve_email`) from the very first item.
+        // That resolution, not the since-removed VAL_OWNER_KNOWN warning, is what the
+        // roster is for — see SPEC-003's note on the removal.
         teamMembers: { create: { name: input.name, email: input.email, role: 'Owner' } },
       },
       select: { id: true, email: true, name: true, passwordUpdatedAt: true },

@@ -59,7 +59,8 @@ stated plainly on the public security page: revocation is not per-device.
 
 - Sign-up applies the full password policy (SPEC-005 §3), creates `UserSettings`
   and a first `TeamMember` in the same transaction — so the rule engine always has
-  a real envelope to read, and `VAL_OWNER_KNOWN` is meaningful from the first item.
+  a real envelope to read, and an action assigned to the owner resolves to a real email
+  address from the first item.
 - **Sign-up discloses account existence** (`409 account_exists`). The alternative
   is silently doing nothing and leaving someone stuck.
 - **Sign-in never does.** Unknown address, no password set, and wrong password all

@@ -62,31 +62,6 @@ def _val_email_format(ctx: RuleContext) -> Optional[RuleViolation]:
     )
 
 
-def _val_owner_known(ctx: RuleContext) -> Optional[RuleViolation]:
-    owner = (ctx.item.owner_name or "").strip()
-    # Absence is readiness' problem, not this rule's. Reporting "no owner" here as well
-    # would double up on the same gap.
-    if not owner:
-        return None
-    owner_email = (ctx.item.owner_email or "").lower()
-    known = any(
-        m.name.lower() == owner.lower() or (owner_email and m.email.lower() == owner_email)
-        for m in ctx.team_members
-    )
-    if known:
-        return None
-    return RuleViolation(
-        rule_id="VAL_OWNER_KNOWN",
-        # WARN: a name missing from the roster is usually an incomplete roster, not a
-        # wrong assignment. Blocking would punish the common case.
-        severity="WARN",
-        message=(
-            f"“{owner}” is not in your team roster, so this may be assigned to the wrong person."
-        ),
-        remedy="Add them to the roster, or correct the owner.",
-    )
-
-
 def _val_budget_approval(ctx: RuleContext) -> Optional[RuleViolation]:
     amount = largest_amount(f"{ctx.item.description} {ctx.item.source_quote or ''}")
     limit = ctx.settings.budget_approval_limit
@@ -116,7 +91,6 @@ VAL_DEADLINE_PAST = Rule(
 VAL_EMAIL_FORMAT = Rule(
     "VAL_EMAIL_FORMAT", "Addresses well-formed", "BLOCK", ("EMAIL", "CALENDAR"), _val_email_format
 )
-VAL_OWNER_KNOWN = Rule("VAL_OWNER_KNOWN", "Owner is on the roster", "WARN", _ALL, _val_owner_known)
 VAL_BUDGET_APPROVAL = Rule(
     "VAL_BUDGET_APPROVAL", "Budget within limit", "BLOCK", _ALL, _val_budget_approval
 )
@@ -125,6 +99,5 @@ VALIDATION_RULES: tuple[Rule, ...] = (
     VAL_REQUIRED_FIELDS,
     VAL_DEADLINE_PAST,
     VAL_EMAIL_FORMAT,
-    VAL_OWNER_KNOWN,
     VAL_BUDGET_APPROVAL,
 )

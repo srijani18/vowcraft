@@ -51,7 +51,7 @@ test('every rule in the registry is reachable and uniquely identified', async ()
   const ids = RULES.map((rule) => rule.id)
 
   assert.equal(new Set(ids).size, ids.length, `duplicate rule ids: ${ids.join(', ')}`)
-  assert.ok(ids.length >= 17, `expected at least 17 rules, registry has ${ids.length}`)
+  assert.ok(ids.length >= 16, `expected at least 16 rules, registry has ${ids.length}`)
 
   for (const rule of RULES) {
     assert.ok(rule.appliesTo.length > 0, `${rule.id} applies to no action type, so it can never fire`)

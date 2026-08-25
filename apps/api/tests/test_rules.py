@@ -32,11 +32,15 @@ def calendar_payload(**overrides) -> dict:
 
 
 class TestRegistry:
-    def test_seventeen_rules_in_three_families(self):
+    def test_sixteen_rules_in_three_families(self):
         assert len(SCHEDULING_RULES) == 7
-        assert len(VALIDATION_RULES) == 5
+        # 4, not 5: VAL_OWNER_KNOWN was removed. It warned when an action's owner was not
+        # on the `TeamMember` roster, but there has never been a UI to *populate* that
+        # roster, so it fired on almost every real item and its remedy ("add them to the
+        # roster") pointed at a surface that does not exist.
+        assert len(VALIDATION_RULES) == 4
         assert len(POLICY_RULES) == 5
-        assert len(RULES) == 17
+        assert len(RULES) == 16
 
     def test_every_rule_id_is_unique(self):
         rule_ids = [r.id for r in RULES]
@@ -155,19 +159,6 @@ class TestValidation:
     def test_a_malformed_address_blocks(self, make_item, make_ctx):
         item = make_item("CALENDAR", payload=calendar_payload(attendees=["not-an-email"]))
         assert "BLOCK:VAL_EMAIL_FORMAT" in ids(evaluate_rules(make_ctx(item)))
-
-    def test_an_owner_off_the_roster_warns(self, make_item, make_ctx):
-        item = make_item("TASK", description="Do the thing", owner_name="Nobody Here",
-                         payload={"title": "Do it"})
-        result = evaluate_rules(make_ctx(item))
-        assert "WARN:VAL_OWNER_KNOWN" in ids(result)
-        # Usually an incomplete roster, not a wrong assignment.
-        assert result.passes is True
-
-    def test_an_owner_matched_by_email_is_known(self, make_item, make_ctx):
-        item = make_item("TASK", description="Do the thing", owner_name="P. Raman",
-                         owner_email="priya@acme.com", payload={"title": "Do it"})
-        assert "WARN:VAL_OWNER_KNOWN" not in ids(evaluate_rules(make_ctx(item)))
 
     def test_a_past_due_date_blocks(self, make_item, make_ctx):
         item = make_item("TASK", description="Do the thing",
