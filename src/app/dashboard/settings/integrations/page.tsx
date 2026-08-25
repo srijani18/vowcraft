@@ -4,6 +4,7 @@ import { currentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { env } from '@/lib/env'
 import { providerStatuses } from '@/integrations/registry'
+import { resolveOAuthApp } from '@/integrations/oauth'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,8 +33,19 @@ export default async function IntegrationsPage({
     },
   })
   const byProvider = new Map(accounts.map((a) => [a.provider, a]))
-  const providers = providerStatuses()
   const mode = env().INTEGRATIONS_MODE
+
+  // `providerStatuses().configured` only sees the environment. An OAuth app can also live
+  // in the credential vault (Settings → API keys), which is per-user and async to read, so
+  // ask the same resolver the connect flow itself uses — otherwise this page offers "add
+  // its client id and secret" for an app that is already stored.
+  const providers = await Promise.all(
+    providerStatuses().map(async (provider) => {
+      if (provider.auth !== 'oauth') return provider
+      const app = await resolveOAuthApp(provider.id, user.id)
+      return { ...provider, configured: app !== null }
+    }),
+  )
 
   return (
     <div className="space-y-6">
@@ -95,12 +107,18 @@ export default async function IntegrationsPage({
                     Executes <span className="text-ink-muted">{provider.capability}</span> actions
                   </p>
                 </div>
-                <Badge
-                  tone={connectedOk ? 'success' : account?.needsReauth ? 'danger' : 'muted'}
-                  icon={connectedOk ? 'bi-plug-fill' : 'bi-plug'}
-                >
-                  {connectedOk ? 'connected' : account?.needsReauth ? 'needs reauth' : 'not connected'}
-                </Badge>
+                {provider.status === 'planned' ? (
+                  <Badge tone="neutral" icon="bi-hourglass-split">
+                    coming soon
+                  </Badge>
+                ) : (
+                  <Badge
+                    tone={connectedOk ? 'success' : account?.needsReauth ? 'danger' : 'muted'}
+                    icon={connectedOk ? 'bi-plug-fill' : 'bi-plug'}
+                  >
+                    {connectedOk ? 'connected' : account?.needsReauth ? 'needs reauth' : 'not connected'}
+                  </Badge>
+                )}
               </div>
 
               <dl className="mt-3 space-y-1 text-[11px] text-ink-faint">
@@ -125,7 +143,19 @@ export default async function IntegrationsPage({
               </dl>
 
               <div className="mt-4 flex items-center gap-2 border-t border-edge pt-3">
-                {provider.configured ? (
+                {/* No Connect button for a gated provider: routing refuses to reach it, so
+                    offering the flow would grant an authorization that nothing can use.
+                    Saying what it would do keeps the entry informative rather than a dead
+                    row the reader has to guess about. */}
+                {provider.status === 'planned' ? (
+                  <p className="text-[11px] text-ink-faint">
+                    <i className="bi bi-info-circle mr-1.5" aria-hidden />
+                    Built and tested, not switched on yet.{' '}
+                    {provider.capability === 'REMINDER'
+                      ? 'Reminders are extracted and reviewable, but cannot execute until this lands.'
+                      : 'Email runs through Gmail in the meantime.'}
+                  </p>
+                ) : provider.configured ? (
                   <a
                     href={`/api/integrations/${provider.id}/authorize`}
                     className="inline-flex items-center gap-2 rounded-xl border border-accent/50 bg-accent/20 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/30"

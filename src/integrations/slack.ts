@@ -31,6 +31,10 @@ export const slack: IntegrationProvider<ReminderPayload, SlackScheduled> = {
   id: 'slack',
   displayName: 'Slack',
   capability: 'REMINDER',
+  // Built and tested, but not part of what the product currently offers. Routing
+  // refuses to reach it — see `resolveProvider`.
+  status: 'planned' as const,
+
   auth: 'oauth',
   scopes: ['chat:write', 'users:read', 'im:write'],
   idempotent: true,
@@ -67,9 +71,9 @@ export const slack: IntegrationProvider<ReminderPayload, SlackScheduled> = {
     }
   },
 
-  authorizeUrl(state, redirectUri) {
+  authorizeUrl(state, redirectUri, _codeChallenge, app) {
     const params = new URLSearchParams({
-      client_id: env().SLACK_CLIENT_ID ?? '',
+      client_id: app.clientId,
       redirect_uri: redirectUri,
       scope: this.scopes.join(','),
       state,
@@ -77,7 +81,7 @@ export const slack: IntegrationProvider<ReminderPayload, SlackScheduled> = {
     return `${AUTH}?${params.toString()}`
   },
 
-  async exchangeCode(code, redirectUri) {
+  async exchangeCode(code, redirectUri, _codeVerifier, app) {
     const json = await providerFetch<{
       ok: boolean
       error?: string
@@ -90,8 +94,8 @@ export const slack: IntegrationProvider<ReminderPayload, SlackScheduled> = {
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code,
-        client_id: env().SLACK_CLIENT_ID ?? '',
-        client_secret: env().SLACK_CLIENT_SECRET ?? '',
+        client_id: app.clientId,
+        client_secret: app.clientSecret,
         redirect_uri: redirectUri,
       }),
     })

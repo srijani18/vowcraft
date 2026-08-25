@@ -72,9 +72,9 @@ export const notion: IntegrationProvider<TaskPayload, NotionPage> = {
     }
   },
 
-  authorizeUrl(state, redirectUri) {
+  authorizeUrl(state, redirectUri, _codeChallenge, app) {
     const params = new URLSearchParams({
-      client_id: env().NOTION_CLIENT_ID ?? '',
+      client_id: app.clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
       owner: 'user',
@@ -85,10 +85,8 @@ export const notion: IntegrationProvider<TaskPayload, NotionPage> = {
     return `${AUTH}?${params.toString()}`
   },
 
-  async exchangeCode(code, redirectUri) {
-    const basic = Buffer.from(
-      `${env().NOTION_CLIENT_ID}:${env().NOTION_CLIENT_SECRET}`,
-    ).toString('base64')
+  async exchangeCode(code, redirectUri, _codeVerifier, app) {
+    const basic = Buffer.from(`${app.clientId}:${app.clientSecret}`).toString('base64')
     const json = await providerFetch<{
       access_token: string
       workspace_id?: string

@@ -72,9 +72,9 @@ export const gmail: IntegrationProvider<EmailPayload, GmailMessage> = {
     }
   },
 
-  authorizeUrl(state, redirectUri, codeChallenge) {
+  authorizeUrl(state, redirectUri, codeChallenge, app) {
     const params = new URLSearchParams({
-      client_id: env().GOOGLE_CLIENT_ID ?? '',
+      client_id: app.clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
       scope: this.scopes.join(' '),
@@ -87,7 +87,7 @@ export const gmail: IntegrationProvider<EmailPayload, GmailMessage> = {
     return `${AUTH}?${params.toString()}`
   },
 
-  async exchangeCode(code, redirectUri, codeVerifier) {
+  async exchangeCode(code, redirectUri, codeVerifier, app) {
     const json = await providerFetch<{
       access_token: string
       refresh_token?: string
@@ -99,8 +99,8 @@ export const gmail: IntegrationProvider<EmailPayload, GmailMessage> = {
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code,
-        client_id: env().GOOGLE_CLIENT_ID ?? '',
-        client_secret: env().GOOGLE_CLIENT_SECRET ?? '',
+        client_id: app.clientId,
+        client_secret: app.clientSecret,
         redirect_uri: redirectUri,
         grant_type: 'authorization_code',
         code_verifier: codeVerifier,
@@ -114,15 +114,15 @@ export const gmail: IntegrationProvider<EmailPayload, GmailMessage> = {
     } satisfies TokenSet
   },
 
-  async refresh(refreshToken) {
+  async refresh(refreshToken, app) {
     const json = await providerFetch<{ access_token: string; expires_in?: number }>(TOKEN, {
       provider: 'gmail',
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         refresh_token: refreshToken,
-        client_id: env().GOOGLE_CLIENT_ID ?? '',
-        client_secret: env().GOOGLE_CLIENT_SECRET ?? '',
+        client_id: app.clientId,
+        client_secret: app.clientSecret,
         grant_type: 'refresh_token',
       }),
     })
