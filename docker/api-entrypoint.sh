@@ -21,4 +21,8 @@ python3 ensure_migration_state.py
 alembic upgrade head
 cd /app
 
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+# `$PORT` because that is the contract every managed host uses: Render (and Fly, and
+# Cloud Run) assign a port and expect the process to bind it, and a service listening
+# somewhere else fails its health check while looking perfectly healthy in the logs.
+# Defaults to 8000 so docker-compose.yml's fixed mapping is unchanged.
+exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
